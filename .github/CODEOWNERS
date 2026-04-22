@@ -1,0 +1,8 @@
+# Global owner
+*       @walterschoenenbroecher
+
+# Security-critical paths require review
+/packages/core/src/mapping-store.ts    @walterschoenenbroecher
+/packages/core/src/entity-classifier.ts @walterschoenenbroecher
+/packages/server/src/auth.ts            @walterschoenenbroecher
+/SECURITY.md                            @walterschoenenbroecher
