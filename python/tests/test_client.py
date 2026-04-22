@@ -1,5 +1,4 @@
 import pytest
-import httpx
 from pytest_httpx import HTTPXMock
 from pii_proxy import PiiProxyClient, PiiProxyError
 
