@@ -1,0 +1,44 @@
+{
+  "name": "@whitestag-ai/pii-proxy-core",
+  "version": "0.1.0",
+  "description": "PII detection, pseudonymisation, and mapping-store library for LLM privacy gating",
+  "keywords": ["gdpr", "dsgvo", "pii", "anonymisation", "pseudonymisation", "llm", "privacy"],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./keychain": {
+      "import": "./dist/keychain.js",
+      "types": "./dist/keychain.d.ts"
+    }
+  },
+  "files": ["dist", "pii-proxy-rules.default.yaml"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "keytar": "^7.9.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^25.6.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whitestag-ai/pii-proxy.git",
+    "directory": "packages/core"
+  },
+  "license": "Apache-2.0",
+  "author": "WHITESTAG.AI <whitestagvr@gmail.com>"
+}
