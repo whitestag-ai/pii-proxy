@@ -1,5 +1,6 @@
 import pytest
 from pytest_httpx import HTTPXMock
+
 from pii_proxy import PiiProxyClient, PiiProxyError
 
 KEY = "client-test-key-32-bytes-xxxxxxxxx"
