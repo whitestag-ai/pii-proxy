@@ -1,0 +1,29 @@
+[Unit]
+Description=pii-proxy — DSGVO-compliant LLM anonymisation gate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pii-proxy
+Group=pii-proxy
+WorkingDirectory=/opt/pii-proxy/server
+ExecStart=/usr/bin/node /opt/pii-proxy/server/dist/index.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/pii-proxy/out.log
+StandardError=append:/var/log/pii-proxy/err.log
+Environment=PII_PROXY_PORT=4711
+Environment=PII_PROXY_BIND=0.0.0.0
+Environment=PII_PROXY_CLASSIFIER_URL=http://localhost:11434
+Environment=PII_PROXY_CLASSIFIER_MODEL=gemma2:27b
+Environment=PII_PROXY_MAPPING_DB=/var/lib/pii-proxy/mappings.db
+Environment=PII_PROXY_AUDIT_DIR=/var/lib/pii-proxy/audit
+EnvironmentFile=-/etc/pii-proxy/secret.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pii-proxy /var/log/pii-proxy
+
+[Install]
+WantedBy=multi-user.target
