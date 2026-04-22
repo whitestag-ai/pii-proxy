@@ -1,0 +1,19 @@
+services:
+  pii-proxy:
+    image: ghcr.io/whitestag-ai/pii-proxy:latest
+    container_name: pii-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4711:4711"
+    environment:
+      PII_PROXY_SHARED_KEY: ${PII_PROXY_SHARED_KEY}
+      PII_PROXY_MAPPING_KEY_BASE64: ${PII_PROXY_MAPPING_KEY_BASE64}
+      PII_PROXY_CLASSIFIER_URL: http://host.docker.internal:11434
+      PII_PROXY_CLASSIFIER_MODEL: gemma2:27b
+    volumes:
+      - pii-proxy-data:/var/lib/pii-proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  pii-proxy-data:

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { createPiiProxy } from "@whitestag-ai/pii-proxy-core";
-import { getOrCreateMappingKey } from "@whitestag-ai/pii-proxy-core/keychain";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
 import { AuditTailer } from "./audit-tail.js";
@@ -9,9 +8,23 @@ import { startMonitorRunner } from "./monitor-runner.js";
 import { makeClassifierProbe } from "./classifier-probe.js";
 import { postTelegram } from "./telegram.js";
 
+async function resolveMappingKey(): Promise<Buffer> {
+  const fromEnv = process.env.PII_PROXY_MAPPING_KEY_BASE64;
+  if (fromEnv) {
+    const buf = Buffer.from(fromEnv, "base64");
+    if (buf.length !== 32) {
+      throw new Error("PII_PROXY_MAPPING_KEY_BASE64 must decode to exactly 32 bytes");
+    }
+    return buf;
+  }
+  // Fall back to OS keychain (macOS). Linux without libsecret → this will throw.
+  const { getOrCreateMappingKey } = await import("@whitestag-ai/pii-proxy-core/keychain");
+  return getOrCreateMappingKey();
+}
+
 async function main(): Promise<void> {
   const cfg = loadConfig();
-  const mappingKey = await getOrCreateMappingKey();
+  const mappingKey = await resolveMappingKey();
 
   const dpo = createPiiProxy({
     mappingDbPath: cfg.mappingDbPath,
