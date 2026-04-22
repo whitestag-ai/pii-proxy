@@ -12,6 +12,5 @@ __pycache__/
 venv/
 *.egg-info/
 build/
-.changeset/*.md
-!.changeset/config.json
-!.changeset/README.md
+# Changeset markdown files are tracked (consumed by CI at release time)
+# !.changeset/config.json and README.md are always tracked
