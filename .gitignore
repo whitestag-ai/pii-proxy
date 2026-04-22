@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
+*.tsbuildinfo
+__pycache__/
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+.changeset/*.md
+!.changeset/config.json
+!.changeset/README.md

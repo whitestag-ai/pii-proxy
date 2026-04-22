@@ -1,0 +1,27 @@
+{
+  "name": "pii-proxy-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DSGVO-compliant anonymisation gate for LLM calls",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/whitestag-ai/pii-proxy.git"
+  },
+  "homepage": "https://github.com/whitestag-ai/pii-proxy",
+  "license": "Apache-2.0",
+  "author": "WHITESTAG.AI <whitestagvr@gmail.com>",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm -r build && changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
