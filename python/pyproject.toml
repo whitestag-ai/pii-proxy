@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pii-proxy"
+version = "0.1.0"
+description = "Python client for pii-proxy — GDPR-compliant LLM anonymisation gate"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    { name = "WHITESTAG.AI", email = "whitestagvr@gmail.com" }
+]
+keywords = ["gdpr", "dsgvo", "pii", "anonymisation", "llm", "privacy"]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+dependencies = [
+    "httpx>=0.27,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "pytest-httpx>=0.32",
+    "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/whitestag-ai/pii-proxy"
+Repository = "https://github.com/whitestag-ai/pii-proxy"
+Issues = "https://github.com/whitestag-ai/pii-proxy/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pii_proxy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
