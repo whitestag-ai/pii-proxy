@@ -43,7 +43,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Log in to GHCR
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.publishedPackages != '' && steps.changesets.outputs.publishedPackages != '[]'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -51,7 +51,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.publishedPackages != '' && steps.changesets.outputs.publishedPackages != '[]'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -62,11 +62,15 @@ jobs:
             ghcr.io/whitestag-ai/pii-proxy:${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
 
       - name: Publish Python package
-        if: steps.changesets.outputs.published == 'true' && env.PYPI_TOKEN != ''
+        if: steps.changesets.outputs.publishedPackages != '' && steps.changesets.outputs.publishedPackages != '[]'
         working-directory: python
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
+          if [[ -z "${PYPI_TOKEN:-}" ]]; then
+            echo "PYPI_TOKEN not set, skipping PyPI upload"
+            exit 0
+          fi
           pip install build twine
           python -m build
           twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
