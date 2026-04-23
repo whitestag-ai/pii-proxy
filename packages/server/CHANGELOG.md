@@ -1,5 +1,15 @@
 # @whitestag/pii-proxy-server
 
+## 0.2.1
+
+### Patch Changes
+
+- 355237e: Re-trigger release pipeline with corrected `publishedPackages` gate so
+  that the GHCR Docker image and PyPI artefact are produced alongside the
+  npm publish. Package contents are functionally identical to 0.2.0.
+- Updated dependencies [355237e]
+  - @whitestag/pii-proxy-core@0.2.1
+
 ## 0.2.0
 
 ### Minor Changes
