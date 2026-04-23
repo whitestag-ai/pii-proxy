@@ -30,23 +30,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Debug — npm auth + access check
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          set +e
-          echo "=== token length / preview ==="
-          echo "NPM_TOKEN length: ${#NPM_TOKEN}"
-          echo "NPM_TOKEN starts: ${NPM_TOKEN:0:8}..."
-          echo "=== writing ~/.npmrc ==="
-          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-          echo "=== npm whoami ==="
-          npm whoami --registry https://registry.npmjs.org/ || echo "whoami FAILED"
-          echo "=== npm access list-packages (as me) ==="
-          npm access list packages --registry https://registry.npmjs.org/ 2>&1 | head -20 || true
-          echo "=== npm org ls whitestag (expect my own orgs) ==="
-          npm org ls whitestag --registry https://registry.npmjs.org/ 2>&1 | head -10 || true
-
       - name: Create release PR or publish
         id: changesets
         uses: changesets/action@v1
@@ -57,6 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Log in to GHCR
         if: steps.changesets.outputs.published == 'true'
