@@ -1,8 +1,16 @@
 {
   "name": "@whitestag-ai/pii-proxy-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "PII detection, pseudonymisation, and mapping-store library for LLM privacy gating",
-  "keywords": ["gdpr", "dsgvo", "pii", "anonymisation", "pseudonymisation", "llm", "privacy"],
+  "keywords": [
+    "gdpr",
+    "dsgvo",
+    "pii",
+    "anonymisation",
+    "pseudonymisation",
+    "llm",
+    "privacy"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +24,10 @@
       "types": "./dist/keychain.d.ts"
     }
   },
-  "files": ["dist", "pii-proxy-rules.default.yaml"],
+  "files": [
+    "dist",
+    "pii-proxy-rules.default.yaml"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

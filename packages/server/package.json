@@ -1,14 +1,26 @@
 {
   "name": "@whitestag-ai/pii-proxy-server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "HTTP server exposing pii-proxy-core endpoints over the network with shared-secret auth",
-  "keywords": ["gdpr", "dsgvo", "pii", "pseudonymisation", "llm", "privacy", "fastify"],
+  "keywords": [
+    "gdpr",
+    "dsgvo",
+    "pii",
+    "pseudonymisation",
+    "llm",
+    "privacy",
+    "fastify"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
     "pii-proxy-server": "./dist/index.js"
   },
-  "files": ["dist", "deploy", "scripts"],
+  "files": [
+    "dist",
+    "deploy",
+    "scripts"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
