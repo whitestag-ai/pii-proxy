@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
 
 const Body = z.object({
   text: z.string().min(1),

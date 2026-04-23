@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { buildServer } from "../src/server.js";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
 
 const KEY = "test-key-32-bytes-xxxxxxxxxxxxxxx";
 

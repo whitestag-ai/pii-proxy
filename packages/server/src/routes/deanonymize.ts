@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
-import { MappingNotFoundError } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
+import { MappingNotFoundError } from "@whitestag/pii-proxy-core";
 
 const Body = z.object({
   mappingId: z.string().min(1),

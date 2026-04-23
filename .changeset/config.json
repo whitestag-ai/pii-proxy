@@ -3,7 +3,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [],
-  "linked": [["@whitestag-ai/pii-proxy-core", "@whitestag-ai/pii-proxy-server"]],
+  "linked": [["@whitestag/pii-proxy-core", "@whitestag/pii-proxy-server"]],
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",

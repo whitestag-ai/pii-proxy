@@ -40,17 +40,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy server artefacts and its node_modules first (includes a workspace-symlink
-# for @whitestag-ai/pii-proxy-core that we replace with the real core package below).
+# for @whitestag/pii-proxy-core that we replace with the real core package below).
 COPY --from=builder /workspace/packages/server/dist ./dist
 COPY --from=builder /workspace/packages/server/package.json ./
 COPY --from=builder /workspace/packages/server/node_modules ./node_modules
 
 # Drop the workspace-symlink for core and copy the real package contents in.
-RUN rm -rf ./node_modules/@whitestag-ai/pii-proxy-core \
-    && mkdir -p ./node_modules/@whitestag-ai/pii-proxy-core
-COPY --from=builder /workspace/packages/core/dist ./node_modules/@whitestag-ai/pii-proxy-core/dist
-COPY --from=builder /workspace/packages/core/package.json ./node_modules/@whitestag-ai/pii-proxy-core/
-COPY --from=builder /workspace/packages/core/pii-proxy-rules.default.yaml ./node_modules/@whitestag-ai/pii-proxy-core/
+RUN rm -rf ./node_modules/@whitestag/pii-proxy-core \
+    && mkdir -p ./node_modules/@whitestag/pii-proxy-core
+COPY --from=builder /workspace/packages/core/dist ./node_modules/@whitestag/pii-proxy-core/dist
+COPY --from=builder /workspace/packages/core/package.json ./node_modules/@whitestag/pii-proxy-core/
+COPY --from=builder /workspace/packages/core/pii-proxy-rules.default.yaml ./node_modules/@whitestag/pii-proxy-core/
 
 # Non-root user
 RUN useradd --system --uid 1001 pii-proxy \

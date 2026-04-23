@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createPiiProxy } from "@whitestag-ai/pii-proxy-core";
+import { createPiiProxy } from "@whitestag/pii-proxy-core";
 import { loadConfig } from "./config.js";
 import { buildServer } from "./server.js";
 import { AuditTailer } from "./audit-tail.js";
@@ -18,7 +18,7 @@ async function resolveMappingKey(): Promise<Buffer> {
     return buf;
   }
   // Fall back to OS keychain (macOS). Linux without libsecret → this will throw.
-  const { getOrCreateMappingKey } = await import("@whitestag-ai/pii-proxy-core/keychain");
+  const { getOrCreateMappingKey } = await import("@whitestag/pii-proxy-core/keychain");
   return getOrCreateMappingKey();
 }
 

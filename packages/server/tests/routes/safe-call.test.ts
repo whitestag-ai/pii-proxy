@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAuth } from "../../src/auth.js";
 import { registerSafeCallRoute } from "../../src/routes/safe-call.js";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
 
 const KEY = "test-key-32-bytes-xxxxxxxxxxxxxxx";
 

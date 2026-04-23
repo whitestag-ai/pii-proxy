@@ -1,5 +1,5 @@
 {
-  "name": "@whitestag-ai/pii-proxy-server",
+  "name": "@whitestag/pii-proxy-server",
   "version": "0.2.0",
   "description": "HTTP server exposing pii-proxy-core endpoints over the network with shared-secret auth",
   "keywords": [
@@ -29,7 +29,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@whitestag-ai/pii-proxy-core": "workspace:*",
+    "@whitestag/pii-proxy-core": "workspace:*",
     "fastify": "^4.28.0",
     "zod": "^3.23.0"
   },

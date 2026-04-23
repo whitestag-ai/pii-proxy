@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { createPiiProxy } from "@whitestag-ai/pii-proxy-core";
+import { createPiiProxy } from "@whitestag/pii-proxy-core";
 import { buildServer } from "../src/server.js";
 
 const RUN = process.env.PII_PROXY_INTEGRATION === "1";

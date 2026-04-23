@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
 import { renderBodyTemplate, extractByPath } from "../template.js";
 
 const Body = z.object({

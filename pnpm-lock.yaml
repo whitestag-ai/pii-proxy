@@ -42,7 +42,7 @@ importers:
 
   packages/server:
     dependencies:
-      '@whitestag-ai/pii-proxy-core':
+      '@whitestag/pii-proxy-core':
         specifier: workspace:*
         version: link:../core
       fastify:

@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import type { PiiProxy } from "@whitestag-ai/pii-proxy-core";
+import type { PiiProxy } from "@whitestag/pii-proxy-core";
 import { registerAuth } from "./auth.js";
 import { registerHealthRoute } from "./routes/health.js";
 import { registerAnonymizeRoute } from "./routes/anonymize.js";

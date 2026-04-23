@@ -53,7 +53,7 @@ systemctl status pii-proxy
 ### TypeScript
 
 ```ts
-import { createPiiProxyClient } from "@whitestag-ai/pii-proxy-core";
+import { createPiiProxyClient } from "@whitestag/pii-proxy-core";
 
 const client = createPiiProxyClient({
   baseUrl: "http://localhost:4711",
@@ -121,8 +121,8 @@ On Art. 9 detection or classifier outage, requests are **blocked** (fail-closed)
 
 | Package | What | Install |
 |---|---|---|
-| [`@whitestag-ai/pii-proxy-core`](packages/core/) | TS library: detectors, classifier, mapping store | `pnpm add @whitestag-ai/pii-proxy-core` |
-| [`@whitestag-ai/pii-proxy-server`](packages/server/) | Fastify HTTP gate | `docker pull ghcr.io/whitestag-ai/pii-proxy` |
+| [`@whitestag/pii-proxy-core`](packages/core/) | TS library: detectors, classifier, mapping store | `pnpm add @whitestag/pii-proxy-core` |
+| [`@whitestag/pii-proxy-server`](packages/server/) | Fastify HTTP gate | `docker pull ghcr.io/whitestag-ai/pii-proxy` |
 | [`pii-proxy`](python/) (PyPI) | Python HTTP client | `pip install pii-proxy` |
 | [`paperclip-plugin-pii-proxy`](https://github.com/whitestag-ai/paperclip-plugin-pii-proxy) | Paperclip integration | separate repo |
 

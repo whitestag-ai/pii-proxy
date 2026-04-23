@@ -1,4 +1,4 @@
-# @whitestag-ai/pii-proxy-server
+# @whitestag/pii-proxy-server
 
 ## 0.2.0
 
@@ -6,15 +6,15 @@
 
 - f720c2f: Initial public release.
 
-  - @whitestag-ai/pii-proxy-core: Library for PII detection, pseudonymisation, and mapping-store management
-  - @whitestag-ai/pii-proxy-server: Fastify HTTP server exposing anonymize/deanonymize/safe-call endpoints with X-PII-Proxy-Key auth
+  - @whitestag/pii-proxy-core: Library for PII detection, pseudonymisation, and mapping-store management
+  - @whitestag/pii-proxy-server: Fastify HTTP server exposing anonymize/deanonymize/safe-call endpoints with X-PII-Proxy-Key auth
 
   See README for quick start and architecture overview.
 
 ### Patch Changes
 
 - Updated dependencies [f720c2f]
-  - @whitestag-ai/pii-proxy-core@0.2.0
+  - @whitestag/pii-proxy-core@0.2.0
 
 ## 0.1.0
 
