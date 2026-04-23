@@ -62,9 +62,11 @@ jobs:
             ghcr.io/whitestag-ai/pii-proxy:${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
 
       - name: Publish Python package
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.changesets.outputs.published == 'true' && env.PYPI_TOKEN != ''
         working-directory: python
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
           pip install build twine
           python -m build
-          twine upload dist/* -u __token__ -p ${{ secrets.PYPI_TOKEN }}
+          twine upload dist/* -u __token__ -p "$PYPI_TOKEN"
