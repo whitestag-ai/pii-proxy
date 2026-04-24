@@ -2,8 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { PiiProxy } from "@whitestag/pii-proxy-core";
-import { createStreamDeanonymizer } from "@whitestag/pii-proxy-core";
-import { createSseParser } from "../streaming/sse-parser.js";
+import { createAnthropicSseDeanonymizer } from "../streaming/anthropic-sse-deanonymizer.js";
 
 const ANTHROPIC_UPSTREAM_DEFAULT = "https://api.anthropic.com/v1/messages";
 
@@ -340,84 +339,13 @@ async function forwardStreaming(
   reply.raw.setHeader("connection", "keep-alive");
   reply.raw.flushHeaders();
 
-  // One streaming deanonymizer per content_block index. Anthropic emits
-  // content_block_start → content_block_delta* → content_block_stop for
-  // each block (text, tool_use, ...). We only rewrite text-delta payloads.
-  const perBlockStreams = new Map<number, ReturnType<typeof createStreamDeanonymizer>>();
-
   const writeSse = (event: string, data: string): void => {
     reply.raw.write(`event: ${event}\ndata: ${data}\n\n`);
   };
 
-  const parser = createSseParser();
-  parser.setListener((evt) => {
-    if (evt.event === "content_block_stop") {
-      let idx: number | null = null;
-      try {
-        const payload = JSON.parse(evt.data) as Record<string, unknown>;
-        if (typeof payload.index === "number") idx = payload.index;
-      } catch {
-        /* ignore malformed stop — forward verbatim below */
-      }
-      if (idx !== null) {
-        const stream = perBlockStreams.get(idx);
-        if (stream) {
-          const tail = stream.end();
-          perBlockStreams.delete(idx);
-          if (tail.length > 0) {
-            writeSse(
-              "content_block_delta",
-              JSON.stringify({
-                type: "content_block_delta",
-                index: idx,
-                delta: { type: "text_delta", text: tail },
-              }),
-            );
-          }
-        }
-      }
-      writeSse(evt.event, evt.data);
-      return;
-    }
-
-    if (evt.event !== "content_block_delta") {
-      writeSse(evt.event, evt.data);
-      return;
-    }
-
-    let payload: Record<string, unknown>;
-    try {
-      payload = JSON.parse(evt.data) as Record<string, unknown>;
-    } catch {
-      writeSse(evt.event, evt.data);
-      return;
-    }
-
-    const index = typeof payload.index === "number" ? payload.index : 0;
-    const delta = payload.delta as Record<string, unknown> | undefined;
-    if (
-      !delta ||
-      typeof delta !== "object" ||
-      (delta.type !== "text_delta" && delta.type !== "text") ||
-      typeof delta.text !== "string"
-    ) {
-      // Non-text delta (e.g. tool_use input_json_delta) — forward as-is.
-      writeSse(evt.event, evt.data);
-      return;
-    }
-
-    let stream = perBlockStreams.get(index);
-    if (!stream) {
-      stream = createStreamDeanonymizer(mappingTable);
-      perBlockStreams.set(index, stream);
-    }
-    const emittedText = stream.write(delta.text as string);
-    if (emittedText.length === 0) {
-      // Buffer is holding back — don't emit anything for this delta.
-      return;
-    }
-    const patched = { ...payload, delta: { ...delta, text: emittedText } };
-    writeSse(evt.event, JSON.stringify(patched));
+  const pipeline = createAnthropicSseDeanonymizer({
+    mappingTable,
+    writeEvent: writeSse,
   });
 
   const reader = upstreamRes.body.getReader();
@@ -428,24 +356,10 @@ async function forwardStreaming(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) parser.write(decoder.decode(value, { stream: true }));
+      if (value) pipeline.write(decoder.decode(value, { stream: true }));
     }
-    parser.write(decoder.decode());
-    // Flush any still-open blocks (e.g. upstream ended without content_block_stop).
-    for (const [idx, stream] of perBlockStreams.entries()) {
-      const tail = stream.end();
-      if (tail.length > 0) {
-        writeSse(
-          "content_block_delta",
-          JSON.stringify({
-            type: "content_block_delta",
-            index: idx,
-            delta: { type: "text_delta", text: tail },
-          }),
-        );
-      }
-    }
-    perBlockStreams.clear();
+    pipeline.write(decoder.decode());
+    pipeline.end();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     try {
@@ -457,7 +371,7 @@ async function forwardStreaming(
         }),
       );
     } catch {
-      /* best-effort; ignore further failures */
+      /* best-effort */
     }
   } finally {
     reply.raw.end();
