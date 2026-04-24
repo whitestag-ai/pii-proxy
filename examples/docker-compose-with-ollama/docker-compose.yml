@@ -1,0 +1,82 @@
+# All-in-one pii-proxy + Ollama stack for local trials.
+#
+# Spins up:
+#   - ollama          — local classifier backend
+#   - ollama-pull     — one-shot init container that downloads the model
+#   - pii-proxy       — the HTTP gate on :4711
+#
+# Use this for first-time evaluation. For production you usually run the
+# classifier on a GPU host (LM Studio on a Mac Studio, an Ollama server
+# on an internal machine, …) and point PII_PROXY_CLASSIFIER_URL at it
+# instead. See ../docker-compose.yml (one-service variant) for that.
+#
+# Quick start:
+#   1. Generate secrets:
+#        export PII_PROXY_SHARED_KEY=$(openssl rand -base64 32 | tr -d '=/+' | cut -c1-43)
+#        export PII_PROXY_MAPPING_KEY_BASE64=$(openssl rand -base64 32)
+#   2. docker compose up -d
+#   3. Wait ~5 min for the model to download on first run.
+#   4. curl http://localhost:4711/health
+#
+# Disk footprint: ~15 GB for gemma2:9b. Pick a smaller model in
+# OLLAMA_MODEL if disk is tight.
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pii-proxy-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    # Uncomment to use a GPU:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: pii-proxy-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma2:9b}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "waiting for ollama..."
+        until ollama list >/dev/null 2>&1; do sleep 2; done
+        echo "pulling $$OLLAMA_MODEL (first run takes several minutes)"
+        ollama pull "$$OLLAMA_MODEL"
+        echo "done"
+    restart: "no"
+    volumes:
+      - ollama-models:/root/.ollama
+
+  pii-proxy:
+    image: ghcr.io/whitestag-ai/pii-proxy:latest
+    container_name: pii-proxy
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_started
+    ports:
+      - "127.0.0.1:4711:4711"
+    environment:
+      PII_PROXY_SHARED_KEY: ${PII_PROXY_SHARED_KEY}
+      PII_PROXY_MAPPING_KEY_BASE64: ${PII_PROXY_MAPPING_KEY_BASE64}
+      PII_PROXY_CLASSIFIER_URL: http://ollama:11434
+      PII_PROXY_CLASSIFIER_MODEL: ${OLLAMA_MODEL:-gemma2:9b}
+    volumes:
+      - pii-proxy-data:/var/lib/pii-proxy
+
+volumes:
+  ollama-models:
+  pii-proxy-data:
