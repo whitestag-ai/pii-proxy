@@ -132,3 +132,11 @@ export { safeExternalCall } from "./safe-external-call.js";
 export type { SafeExternalCallOptions, SafeExternalCallResult } from "./safe-external-call.js";
 export { MappingNotFoundError } from "./errors.js";
 export { createPiiProxyClient, type PiiProxyClient, type PiiProxyClientOptions } from "./client.js";
+export {
+  extractSafePrefix,
+  flushStreamRemainder,
+  createStreamDeanonymizer,
+  type ExtractSafePrefixOptions,
+  type ExtractSafePrefixResult,
+  type StreamDeanonymizer,
+} from "./stream-deanonymizer.js";
