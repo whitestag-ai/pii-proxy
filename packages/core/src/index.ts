@@ -31,6 +31,15 @@ export interface PiiProxyOptions {
 export interface PiiProxy {
   anonymize(req: AnonymizeRequest): Promise<AnonymizeResponse>;
   deanonymize(req: DeanonymizeRequest): DeanonymizeResult;
+  /**
+   * Return the pseudonym → plaintext mapping for a given mappingId.
+   * Used by streaming passthroughs that need to deanonymize chunked
+   * responses (where each chunk is too short for `deanonymize` to
+   * match complete tokens reliably).
+   *
+   * Throws `MappingNotFoundError` when the mappingId is unknown.
+   */
+  getMappingTable(mappingId: string): Map<string, string>;
   close(): void;
 }
 
@@ -120,6 +129,13 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
     deanonymize(req: DeanonymizeRequest): DeanonymizeResult {
       const mappings = store.read(req.mappingId);
       return { text: deanonymizeText(req.text, mappings) };
+    },
+
+    getMappingTable(mappingId: string): Map<string, string> {
+      const entries = store.read(mappingId);
+      const table = new Map<string, string>();
+      for (const entry of entries) table.set(entry.pseudonym, entry.plaintext);
+      return table;
     },
 
     close(): void {
