@@ -266,4 +266,120 @@ describe("POST /anthropic/v1/messages — non-streaming", () => {
     expect(sent.messages[0].content).toBe("[PERSON_A] fragt...");
     expect(sent.messages[1].content).toBe("Ich melde mich bei [PERSON_A].");
   });
+
+  describe("upstream header forwarding", () => {
+    it("forwards SDK metadata headers (user-agent, x-stainless-*, anthropic-beta)", async () => {
+      const piiProxy = mkPiiProxy();
+      const fetchFn = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      app = Fastify();
+      registerAuth(app, { sharedKey: KEY });
+      registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+      await app.ready();
+
+      await app.inject({
+        method: "POST",
+        url: "/anthropic/v1/messages",
+        headers: {
+          "x-api-key": "sk-ant",
+          "content-type": "application/json",
+          "user-agent": "anthropic-sdk/0.30.0 node/22",
+          "x-stainless-lang": "js",
+          "x-stainless-package-version": "0.30.0",
+          "anthropic-beta": "prompt-caching-2024-07-31",
+        },
+        payload: { model: "claude", messages: [{ role: "user", content: "hi Max Mustermann" }] },
+      });
+
+      const sentHeaders = fetchFn.mock.calls[0]![1].headers as Record<string, string>;
+      expect(sentHeaders["user-agent"]).toBe("anthropic-sdk/0.30.0 node/22");
+      expect(sentHeaders["x-stainless-lang"]).toBe("js");
+      expect(sentHeaders["x-stainless-package-version"]).toBe("0.30.0");
+      expect(sentHeaders["anthropic-beta"]).toBe("prompt-caching-2024-07-31");
+      expect(sentHeaders["x-api-key"]).toBe("sk-ant");
+    });
+
+    it("strips hop-by-hop and proxy-internal headers", async () => {
+      const piiProxy = mkPiiProxy();
+      const fetchFn = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      app = Fastify();
+      registerAuth(app, { sharedKey: KEY });
+      registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+      await app.ready();
+
+      await app.inject({
+        method: "POST",
+        url: "/anthropic/v1/messages",
+        headers: {
+          "x-api-key": "sk-ant",
+          "content-type": "application/json",
+          host: "localhost:4711",
+          connection: "keep-alive",
+          "transfer-encoding": "chunked",
+          "keep-alive": "timeout=5",
+          "proxy-authorization": "Basic abc",
+          "x-pii-proxy-key": "internal-secret",
+          "accept-encoding": "gzip, br",
+        },
+        payload: { model: "claude", messages: [{ role: "user", content: "hi" }] },
+      });
+
+      const sentHeaders = fetchFn.mock.calls[0]![1].headers as Record<string, string>;
+      expect(sentHeaders["host"]).toBeUndefined();
+      expect(sentHeaders["connection"]).toBeUndefined();
+      expect(sentHeaders["transfer-encoding"]).toBeUndefined();
+      expect(sentHeaders["keep-alive"]).toBeUndefined();
+      expect(sentHeaders["proxy-authorization"]).toBeUndefined();
+      expect(sentHeaders["x-pii-proxy-key"]).toBeUndefined();
+      expect(sentHeaders["accept-encoding"]).toBeUndefined();
+    });
+
+    it("defaults anthropic-version to 2023-06-01 when absent, preserves it when set", async () => {
+      const piiProxy = mkPiiProxy();
+      const fetchFn = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+      app = Fastify();
+      registerAuth(app, { sharedKey: KEY });
+      registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+      await app.ready();
+
+      await app.inject({
+        method: "POST",
+        url: "/anthropic/v1/messages",
+        headers: { "x-api-key": "sk-ant", "content-type": "application/json" },
+        payload: { model: "claude", messages: [{ role: "user", content: "hi" }] },
+      });
+      expect(
+        (fetchFn.mock.calls[0]![1].headers as Record<string, string>)["anthropic-version"],
+      ).toBe("2023-06-01");
+
+      fetchFn.mockClear();
+      await app.inject({
+        method: "POST",
+        url: "/anthropic/v1/messages",
+        headers: {
+          "x-api-key": "sk-ant",
+          "content-type": "application/json",
+          "anthropic-version": "2024-10-22",
+        },
+        payload: { model: "claude", messages: [{ role: "user", content: "hi" }] },
+      });
+      expect(
+        (fetchFn.mock.calls[0]![1].headers as Record<string, string>)["anthropic-version"],
+      ).toBe("2024-10-22");
+    });
+  });
 });

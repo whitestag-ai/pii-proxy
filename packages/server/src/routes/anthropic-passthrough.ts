@@ -113,21 +113,47 @@ function ensureBoundaryAbsent(boundary: string, texts: string[]): string {
   return b;
 }
 
+// Hop-by-hop headers and proxy-internal headers that must not leak upstream.
+// `content-length` is stripped because the body is re-serialized after
+// anonymization and fetch() recomputes it from the new payload.
+// `accept-encoding` is stripped so SSE streams arrive uncompressed — the
+// streaming pipeline decodes text, not bytes.
+const STRIP_HEADER_NAMES = new Set<string>([
+  "host",
+  "content-length",
+  "connection",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+  "te",
+  "trailer",
+  "proxy-authorization",
+  "proxy-authenticate",
+  "x-pii-proxy-key",
+  "accept-encoding",
+]);
+
 /**
- * Forward the minimal safe header set to the upstream provider. We
- * explicitly whitelist headers so local-proxy secrets never leak upstream.
+ * Forward all request headers to the upstream provider, except hop-by-hop
+ * headers and proxy-internal secrets. Earlier versions used a narrow
+ * whitelist, but that stripped Anthropic-specific metadata headers
+ * (`user-agent`, `x-stainless-*`, `anthropic-dangerous-direct-browser-access`,
+ * …) which the upstream uses to classify the auth mode. Without them,
+ * requests from the Anthropic SDK / Claude CLI were rejected with 401,
+ * causing clients to fall back to alternate auth paths (subscription,
+ * direct calls) and defeating the proxy's PII-scrubbing purpose.
  */
 function buildUpstreamHeaders(req: FastifyRequest): Record<string, string> {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const apiKey = req.headers["x-api-key"];
-  if (typeof apiKey === "string") headers["x-api-key"] = apiKey;
-  const auth = req.headers["authorization"];
-  if (typeof auth === "string") headers["authorization"] = auth;
-  const anthroVersion = req.headers["anthropic-version"];
-  headers["anthropic-version"] = typeof anthroVersion === "string" ? anthroVersion : "2023-06-01";
-  const anthroBeta = req.headers["anthropic-beta"];
-  if (typeof anthroBeta === "string") headers["anthropic-beta"] = anthroBeta;
-  return headers;
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    const lower = name.toLowerCase();
+    if (STRIP_HEADER_NAMES.has(lower)) continue;
+    if (value === undefined) continue;
+    out[lower] = Array.isArray(value) ? value.join(", ") : String(value);
+  }
+  if (!out["content-type"]) out["content-type"] = "application/json";
+  if (!out["anthropic-version"]) out["anthropic-version"] = "2023-06-01";
+  return out;
 }
 
 export function registerAnthropicPassthroughRoute(
