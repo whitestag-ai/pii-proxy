@@ -1,6 +1,6 @@
 {
   "name": "@whitestag/pii-proxy-server",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "HTTP server exposing pii-proxy-core endpoints over the network with shared-secret auth",
   "keywords": [
     "gdpr",

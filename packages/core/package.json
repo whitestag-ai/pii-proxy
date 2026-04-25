@@ -1,6 +1,6 @@
 {
   "name": "@whitestag/pii-proxy-core",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "PII detection, pseudonymisation, and mapping-store library for LLM privacy gating",
   "keywords": [
     "gdpr",
