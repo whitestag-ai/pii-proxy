@@ -117,14 +117,52 @@ Pseudonyms are consistent within a session (same name → same `[PERSON_A]`). Th
 
 On Art. 9 detection or classifier outage, requests are **blocked** (fail-closed). Never falls through silently.
 
+## Architecture at a glance
+
+```
+                    ┌────────────────────────────────────┐
+                    │             your app               │
+                    │   (agent loop, CLI, n8n flow, ...) │
+                    └───────────────┬────────────────────┘
+                                    │ prompt (plaintext)
+                                    ▼
+         ┌──────────────────────────────────────────────────┐
+         │           pii-proxy server (port 4711)           │
+         │                                                  │
+         │   /anonymize  /deanonymize  /safe-call           │
+         │   /anthropic/v1/messages ← streaming passthrough │
+         │                                                  │
+         │   ┌────────┐   ┌─────────────┐   ┌───────────┐   │
+         │   │ regex  │ + │  LLM        │ → │  mapping  │   │
+         │   │ detect │   │  classifier │   │  store    │   │
+         │   └────────┘   └──────┬──────┘   │  AES-GCM  │   │
+         │                       │           └───────────┘   │
+         └───────────────────────┼──────────────────────────┘
+                   prompt (pseudonymised)   response (pseudonymised)
+                                 │                    ▲
+                                 ▼                    │
+                    ┌───────────────────────┐         │
+                    │  api.anthropic.com    │─────────┘
+                    │   (or OpenAI, …)      │
+                    └───────────────────────┘
+```
+
+Streaming: SSE events (Anthropic `content_block_delta`) are deanonymised on the fly with a rolling buffer that never emits a partial pseudonym to the client. See [`packages/server/src/streaming/`](packages/server/src/streaming/) for the algorithm and tests.
+
 ## Components
 
 | Package | What | Install |
 |---|---|---|
-| [`@whitestag/pii-proxy-core`](packages/core/) | TS library: detectors, classifier, mapping store | `pnpm add @whitestag/pii-proxy-core` |
-| [`@whitestag/pii-proxy-server`](packages/server/) | Fastify HTTP gate | `docker pull ghcr.io/whitestag-ai/pii-proxy` |
+| [`@whitestag/pii-proxy-core`](packages/core/) | TS library: detectors, classifier, mapping store, streaming deanonymiser | `pnpm add @whitestag/pii-proxy-core` |
+| [`@whitestag/pii-proxy-server`](packages/server/) | Fastify HTTP gate with Anthropic `/v1/messages` streaming passthrough | `docker pull ghcr.io/whitestag-ai/pii-proxy` |
 | [`pii-proxy`](python/) (PyPI) | Python HTTP client | `pip install pii-proxy` |
-| [`paperclip-plugin-pii-proxy`](https://github.com/whitestag-ai/paperclip-plugin-pii-proxy) | Paperclip integration | separate repo |
+| [`@whitestag/paperclip-plugin-pii-proxy`](https://github.com/whitestag-ai/paperclip-plugin-pii-proxy) | Paperclip integration — transparent routing of agent LLM calls | separate repo |
+
+### Which one do I need?
+
+- **I have an app and want to pseudonymise prompts before cloud LLM calls** → run the server (`ghcr.io/whitestag-ai/pii-proxy`) and call `/safe-call` or `/anonymize`+`/deanonymize` from your code.
+- **I use Claude Code CLI and want it transparently routed** → run the server and set `ANTHROPIC_BASE_URL=http://localhost:4711/anthropic` in the CLI's env. The server will pseudonymise every call and deanonymise every (streamed) response.
+- **I use Paperclip agents** → install the plugin `@whitestag/paperclip-plugin-pii-proxy` — it wires up the base-URL override per-agent with opt-in / opt-out / required-mode policies.
 
 ## Documentation
 

@@ -31,6 +31,15 @@ export interface PiiProxyOptions {
 export interface PiiProxy {
   anonymize(req: AnonymizeRequest): Promise<AnonymizeResponse>;
   deanonymize(req: DeanonymizeRequest): DeanonymizeResult;
+  /**
+   * Return the pseudonym → plaintext mapping for a given mappingId.
+   * Used by streaming passthroughs that need to deanonymize chunked
+   * responses (where each chunk is too short for `deanonymize` to
+   * match complete tokens reliably).
+   *
+   * Throws `MappingNotFoundError` when the mappingId is unknown.
+   */
+  getMappingTable(mappingId: string): Map<string, string>;
   close(): void;
 }
 
@@ -122,6 +131,13 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
       return { text: deanonymizeText(req.text, mappings) };
     },
 
+    getMappingTable(mappingId: string): Map<string, string> {
+      const entries = store.read(mappingId);
+      const table = new Map<string, string>();
+      for (const entry of entries) table.set(entry.pseudonym, entry.plaintext);
+      return table;
+    },
+
     close(): void {
       store.close();
     },
@@ -132,3 +148,11 @@ export { safeExternalCall } from "./safe-external-call.js";
 export type { SafeExternalCallOptions, SafeExternalCallResult } from "./safe-external-call.js";
 export { MappingNotFoundError } from "./errors.js";
 export { createPiiProxyClient, type PiiProxyClient, type PiiProxyClientOptions } from "./client.js";
+export {
+  extractSafePrefix,
+  flushStreamRemainder,
+  createStreamDeanonymizer,
+  type ExtractSafePrefixOptions,
+  type ExtractSafePrefixResult,
+  type StreamDeanonymizer,
+} from "./stream-deanonymizer.js";
