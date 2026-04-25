@@ -6,6 +6,7 @@ import { registerAnonymizeRoute } from "./routes/anonymize.js";
 import { registerDeanonymizeRoute } from "./routes/deanonymize.js";
 import { registerSafeCallRoute } from "./routes/safe-call.js";
 import { registerAnthropicPassthroughRoute } from "./routes/anthropic-passthrough.js";
+import { registerOpenaiChatPassthroughRoute } from "./routes/openai-chat-passthrough.js";
 
 export interface BuildServerOptions {
   sharedKey: string;
@@ -23,6 +24,7 @@ export async function buildServer(opts: BuildServerOptions): Promise<FastifyInst
   registerDeanonymizeRoute(app, { dpo: opts.dpo });
   registerSafeCallRoute(app, { dpo: opts.dpo, fetchFn: opts.fetchFn });
   registerAnthropicPassthroughRoute(app, { piiProxy: opts.dpo, fetchFn: opts.fetchFn });
+  registerOpenaiChatPassthroughRoute(app, { piiProxy: opts.dpo, fetchFn: opts.fetchFn });
   await app.ready();
   return app;
 }
