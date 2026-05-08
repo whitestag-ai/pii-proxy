@@ -38,6 +38,15 @@ function buildContext() {
   const entryPoint = path.join(installDir, "dist", "index.js");
   const data = dataDir("pii-proxy");
   const logs = logDir("pii-proxy");
+  const env = {
+    PII_PROXY_SHARED_KEY: sharedKey,
+    PII_PROXY_MAPPING_KEY_BASE64: mappingKey,
+    PII_PROXY_MAPPING_DB: path.join(data, "mappings.db"),
+    PII_PROXY_AUDIT_DIR: path.join(data, "audit"),
+  };
+  for (const optional of ["PII_PROXY_PORT", "PII_PROXY_BIND", "PII_PROXY_CLASSIFIER_URL", "PII_PROXY_CLASSIFIER_MODEL", "PII_PROXY_CLASSIFIER_TIMEOUT_MS", "PII_PROXY_TELEGRAM_BOT_TOKEN", "PII_PROXY_TELEGRAM_CHAT_ID"]) {
+    if (process.env[optional]) env[optional] = process.env[optional];
+  }
   return {
     serviceName: SERVICE_NAME,
     displayName: DISPLAY_NAME,
@@ -45,12 +54,7 @@ function buildContext() {
     nodeBin: process.execPath,
     entryPoint,
     workingDir: installDir,
-    env: {
-      PII_PROXY_SHARED_KEY: sharedKey,
-      PII_PROXY_MAPPING_KEY_BASE64: mappingKey,
-      PII_PROXY_MAPPING_DB: path.join(data, "mappings.db"),
-      PII_PROXY_AUDIT_DIR: path.join(data, "audit"),
-    },
+    env,
     stdoutLog: path.join(logs, "out.log"),
     stderrLog: path.join(logs, "err.log"),
     dataDir: data,
