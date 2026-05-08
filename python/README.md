@@ -7,3 +7,26 @@ pip install pii-proxy
 ```
 
 See the [monorepo README](../README.md) for full documentation.
+
+## Development
+
+```bash
+cd pii-proxy/python
+python -m venv .venv
+```
+
+**macOS / Linux:**
+```bash
+source .venv/bin/activate
+```
+
+**Windows (PowerShell):**
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+**All OSes:**
+```bash
+pip install -e .[dev]
+pytest
+```

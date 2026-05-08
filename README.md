@@ -21,32 +21,44 @@ docker compose up -d
 curl http://localhost:4711/health
 ```
 
-### macOS (launchd)
+### Native install (macOS / Linux / Windows)
 
+The same install script runs on all three OSes — it detects `process.platform` and dispatches to launchd, systemd, or `node-windows`.
+
+**Prerequisites**
+- Node.js 22 LTS (recommended) or 20 LTS, `pnpm` via `corepack enable`
+- **Windows only:** Visual Studio Build Tools 2022 with the "Desktop development with C++" workload, plus Python 3 — needed because `better-sqlite3` and `keytar` may compile from source if no prebuild matches your Node version. (Node 22 LTS has prebuilds — usually not needed.)
+
+**POSIX (macOS / Linux):**
 ```bash
 git clone https://github.com/whitestag-ai/pii-proxy.git
-cd pii-proxy
-pnpm install && pnpm build
+cd pii-proxy && pnpm install && pnpm build
 
-export PII_PROXY_SHARED_KEY=$(./packages/server/scripts/generate-shared-key.sh)
-security add-generic-password -s io.piiproxy.shared-key -a default -w "$PII_PROXY_SHARED_KEY"
-./packages/server/scripts/install-launchd.sh
+export PII_PROXY_SHARED_KEY=$(node packages/server/scripts/generate-shared-key.mjs)
+export PII_PROXY_MAPPING_KEY_BASE64=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+
+cd packages/server
+node scripts/install-service.mjs
 
 curl http://localhost:4711/health
 ```
 
-### Linux (systemd)
-
-```bash
+**Windows (PowerShell, run as Administrator):**
+```powershell
 git clone https://github.com/whitestag-ai/pii-proxy.git
 cd pii-proxy
-pnpm install && pnpm build
+pnpm install; pnpm build
 
-export PII_PROXY_SHARED_KEY=$(./packages/server/scripts/generate-shared-key.sh)
-sudo -E ./packages/server/deploy/systemd/install-systemd.sh
+$env:PII_PROXY_SHARED_KEY = (node packages\server\scripts\generate-shared-key.mjs).Trim()
+$env:PII_PROXY_MAPPING_KEY_BASE64 = (node -e "console.log(require('crypto').randomBytes(32).toString('base64'))").Trim()
 
-systemctl status pii-proxy
+cd packages\server
+node scripts\install-service.mjs
+
+curl http://localhost:4711/health
 ```
+
+The installer writes the service definition (plist / systemd unit / Windows service) and starts it. Data and logs are placed under platform-appropriate paths — see [`packages/server/README.md`](packages/server/README.md) for details.
 
 ## Usage
 
