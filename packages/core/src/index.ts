@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { detectPii, type DetectorKey } from "./pii-detector.js";
 import { classifyEntities, ClassifierUnavailableError, type ClassifierConfig } from "./entity-classifier.js";
+import { ChunkClassifierCache, classifyEntitiesChunked } from "./classifier-chunk-cache.js";
 import { anonymizeText } from "./anonymizer.js";
 import { deanonymizeText } from "./deanonymizer.js";
 import { MappingStore } from "./mapping-store.js";
@@ -49,6 +50,10 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
   const rules = opts.rules ?? loadDefaultRules();
   const store = new MappingStore({ path: opts.mappingDbPath, key: opts.mappingKey });
   const audit = new AuditLog({ dir: opts.auditDir });
+  // Per-Chunk-Findings-Cache: der riesige statische System-/Skills-Kontext
+  // (über Aufrufe identisch) wird je eindeutigem Chunk nur einmal klassifiziert
+  // und danach aus dem Cache bedient. Eine Cache-Instanz je Proxy.
+  const chunkCache = new ChunkClassifierCache();
 
   return {
     async anonymize(req: AnonymizeRequest): Promise<AnonymizeResponse> {
@@ -58,7 +63,17 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
 
       let llmFindings: Finding[] = [];
       try {
-        llmFindings = await classifyEntities(req.text, opts.classifier);
+        // Chunked + gecacht: der Volltext wird an sicheren Grenzen (Absatz/
+        // Zeile/Satz) in kleine Chunks geschnitten, jeder Chunk einzeln
+        // klassifiziert (klein genug, um den Timeout zu schlagen) und das
+        // Ergebnis je Chunk-Hash gecacht. Findings werden gemerged + nach
+        // (type, value) dedupliziert. Ein ClassifierUnavailableError aus einem
+        // beliebigen Chunk propagiert hier hoch -> fail-closed bleibt erhalten.
+        llmFindings = await classifyEntitiesChunked(
+          req.text,
+          (chunk) => classifyEntities(chunk, opts.classifier),
+          chunkCache,
+        );
       } catch (err) {
         if (err instanceof ClassifierUnavailableError) {
           const blocked: AnonymizeBlocked = { blocked: true, reason: "classifier_unavailable" };

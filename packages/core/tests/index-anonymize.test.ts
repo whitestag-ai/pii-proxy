@@ -114,6 +114,75 @@ describe("createPiiProxy().anonymize", () => {
     proxy.close();
   });
 
+  it("chunked: anonymisiert PERSON aus einem späten Chunk eines langen Mehr-Absatz-Prompts", async () => {
+    // Klassifikator antwortet pro Chunk: liefert die Person nur, wenn ihr
+    // Wortlaut im jeweils gesendeten Chunk (user-message) vorkommt — wie das
+    // echte Modell (value muss exakter Substring sein).
+    const target = "Dr. Anna Müller";
+    let calls = 0;
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      calls += 1;
+      const body = JSON.parse((init as RequestInit).body as string) as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const userChunk = body.messages.find((m) => m.role === "user")?.content ?? "";
+      const findings = userChunk.includes(target)
+        ? [{ type: "PERSON", value: target, confidence: "high" }]
+        : [];
+      return new Response(
+        JSON.stringify({ choices: [{ message: { role: "assistant", content: JSON.stringify({ findings }) } }] }),
+        { status: 200 },
+      );
+    });
+
+    const filler = "Allgemeiner statischer Kontext ohne PII. ".repeat(150); // > MAX_CHUNK_CHARS
+    const text = `${filler}\n\n${target} ruft an.\n\n${filler}`;
+
+    const proxy = createPiiProxy({
+      mappingDbPath: join(dir, "m.db"),
+      mappingKey: randomBytes(32),
+      auditDir: join(dir, "audit"),
+      classifier: { url: "http://x", model: "g", timeoutMs: 1000 },
+    });
+    const result = await proxy.anonymize({ text, targetLlm: "claude", agent: "ceo" });
+    if ("blocked" in result) throw new Error("unexpected block");
+    expect(result.anonymizedText).not.toContain(target);
+    // Beweist Chunking: der lange Prompt löst mehrere Klassifikator-Aufrufe aus.
+    expect(calls).toBeGreaterThan(1);
+    proxy.close();
+  });
+
+  it("chunked: ART_9 high in einem späten Chunk blockiert weiterhin", async () => {
+    const art9 = "HIV-positiv";
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string) as {
+        messages: Array<{ role: string; content: string }>;
+      };
+      const userChunk = body.messages.find((m) => m.role === "user")?.content ?? "";
+      const findings = userChunk.includes(art9)
+        ? [{ type: "ART_9", value: art9, confidence: "high" }]
+        : [];
+      return new Response(
+        JSON.stringify({ choices: [{ message: { role: "assistant", content: JSON.stringify({ findings }) } }] }),
+        { status: 200 },
+      );
+    });
+
+    const filler = "Neutraler Fülltext ohne Gesundheitsbezug. ".repeat(150);
+    const text = `${filler}\n\nDer Patient ist ${art9}.\n\n${filler}`;
+
+    const proxy = createPiiProxy({
+      mappingDbPath: join(dir, "m.db"),
+      mappingKey: randomBytes(32),
+      auditDir: join(dir, "audit"),
+      classifier: { url: "http://x", model: "g", timeoutMs: 1000 },
+    });
+    const result = await proxy.anonymize({ text, targetLlm: "claude", agent: "ceo" });
+    expect("blocked" in result).toBe(true);
+    if ("blocked" in result) expect(result.reason).toBe("art_9_data_detected");
+    proxy.close();
+  });
+
   it("antwortet mit blocked: classifier_unavailable wenn LM Studio offline", async () => {
     vi.spyOn(global, "fetch").mockRejectedValue(new Error("ECONNREFUSED"));
     const proxy = createPiiProxy({
