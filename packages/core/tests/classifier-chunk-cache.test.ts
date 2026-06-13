@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import type { Finding } from "../src/types.js";
 import {
@@ -128,6 +129,40 @@ describe("classifyEntitiesChunked", () => {
     expect(hit).toBeDefined();
     expect(hit?.confidence).toBe("high");
     expect(hit?.value).toBe("HIV-positiv");
+  });
+
+  it("cached einen fehlgeschlagenen Chunk NICHT (GDPR-Invariante: Fehler propagiert, kein leerer Cache-Eintrag)", async () => {
+    // Ein einziger, kurzer Text -> genau ein Chunk. Der Klassifikator wirft
+    // beim ersten Aufruf. Erwartung: der Fehler wird durchgereicht (nicht
+    // verschluckt) und der Chunk landet NICHT als (leerer) Eintrag im Cache —
+    // sonst würde ein späterer Aufruf fälschlich "keine PII" zurückgeben und
+    // damit fail-open auf nicht-klassifizierte Daten.
+    const text = "Dr. Anna Müller hat angerufen.";
+    const cache = new ChunkClassifierCache();
+    const hash = createHash("sha256").update(text, "utf8").digest("hex");
+
+    let calls = 0;
+    const throwing: ChunkClassifier = async (chunk: string) => {
+      calls += 1;
+      throw new Error(`classifier unavailable for chunk: ${chunk.slice(0, 8)}`);
+    };
+
+    // (1) Fehler wird propagiert, nicht geschluckt.
+    await expect(classifyEntitiesChunked(text, throwing, cache)).rejects.toThrow(
+      /classifier unavailable/,
+    );
+    expect(calls).toBe(1);
+
+    // (2) Kein Cache-Eintrag für den fehlgeschlagenen Chunk-Hash.
+    expect(cache.get(hash)).toBeUndefined();
+    expect(cache.size()).toBe(0);
+
+    // (3) Folgeaufruf ruft den Klassifikator ERNEUT auf (kein gecachtes
+    // leeres Ergebnis) — hier mit einem funktionierenden Klassifikator.
+    const ok = makeCountingClassifier([person("Dr. Anna Müller")]);
+    const findings = await classifyEntitiesChunked(text, ok.fn, cache);
+    expect(ok.calls()).toBe(1);
+    expect(findings.some((f) => f.value === "Dr. Anna Müller")).toBe(true);
   });
 });
 

@@ -239,6 +239,11 @@ export async function classifyEntitiesChunked(
 
   // type+value -> Finding (Dedup). Erstes Auftreten gewinnt; bei höherer
   // Confidence eines späteren Duplikats wird hochgestuft (konservativ).
+  // GDPR: Es wird nur das ERSTE Vorkommen eines (type,value) anonymisiert —
+  // identisches Verhalten wie der ursprüngliche, nicht-chunked Pfad (über
+  // text.indexOf, erstes Vorkommen), also keine Regression. Weil die
+  // Anonymisierung wertbasiert über alle gleichen Werte hinweg ersetzt,
+  // bleiben dabei alle Folgevorkommen desselben Werts abgedeckt.
   const merged = new Map<string, Finding>();
   const rank: Record<Finding["confidence"], number> = { low: 0, medium: 1, high: 2 };
 
