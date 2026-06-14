@@ -10,9 +10,11 @@ See the [monorepo README](../README.md) for full documentation.
 
 ## Development
 
+Requires **Python 3.11 or newer** (see `requires-python` in `pyproject.toml`). On macOS the system Python is usually 3.9 — install a newer one via Homebrew (`brew install python@3.11`) or pyenv.
+
 ```bash
 cd pii-proxy/python
-python -m venv .venv
+python3.11 -m venv .venv
 ```
 
 **macOS / Linux:**
@@ -25,8 +27,8 @@ source .venv/bin/activate
 .venv\Scripts\Activate.ps1
 ```
 
-**All OSes:**
+**All OSes** (note the quotes — without them zsh interprets the brackets as a glob):
 ```bash
-pip install -e .[dev]
+pip install -e ".[dev]"
 pytest
 ```
