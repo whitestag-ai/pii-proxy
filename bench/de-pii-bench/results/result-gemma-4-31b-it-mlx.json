@@ -1,0 +1,667 @@
+{
+  "model": "gemma-4-31b-it-mlx",
+  "n_cases": 25,
+  "per_category_recall": {
+    "API_KEY": {
+      "detected": 0,
+      "total": 3,
+      "recall": 0.0
+    },
+    "BIC": {
+      "detected": 2,
+      "total": 2,
+      "recall": 1.0
+    },
+    "EMAIL": {
+      "detected": 2,
+      "total": 2,
+      "recall": 1.0
+    },
+    "FIRMA": {
+      "detected": 4,
+      "total": 4,
+      "recall": 1.0
+    },
+    "IBAN": {
+      "detected": 1,
+      "total": 1,
+      "recall": 1.0
+    },
+    "KREDITKARTE": {
+      "detected": 0,
+      "total": 2,
+      "recall": 0.0
+    },
+    "MIXED": {
+      "detected": 4,
+      "total": 5,
+      "recall": 0.8
+    },
+    "ORT": {
+      "detected": 3,
+      "total": 4,
+      "recall": 0.75
+    },
+    "PERSON": {
+      "detected": 4,
+      "total": 4,
+      "recall": 1.0
+    },
+    "PHONE": {
+      "detected": 2,
+      "total": 2,
+      "recall": 1.0
+    },
+    "STEUERNUMMER": {
+      "detected": 1,
+      "total": 1,
+      "recall": 1.0
+    }
+  },
+  "art9_block": {
+    "blocked": 5,
+    "total": 5,
+    "rate": 1.0
+  },
+  "negatives": {
+    "false_block": 0,
+    "false_replace": 1,
+    "total": 3
+  },
+  "latency_s": {
+    "p50": 5.59,
+    "p90": 8.86,
+    "max": 10.66,
+    "mean": 5.08
+  },
+  "missed": [
+    {
+      "id": "ort1",
+      "cat": "ORT",
+      "missed": [
+        "Bahnhofstraße 5"
+      ]
+    },
+    {
+      "id": "cc1",
+      "cat": "KREDITKARTE",
+      "missed": [
+        "4111 1111 1111 1111"
+      ]
+    },
+    {
+      "id": "cc2",
+      "cat": "KREDITKARTE",
+      "missed": [
+        "5555 5555 5555 4444"
+      ]
+    },
+    {
+      "id": "apikey1",
+      "cat": "API_KEY",
+      "missed": [
+        "sk-proj-9aZ3kLmN7pQ2rT8vWx1yB4cD6eF0gH5j"
+      ]
+    },
+    {
+      "id": "apikey2",
+      "cat": "API_KEY",
+      "missed": [
+        "ghp_AbCdEf1234567890GhIjKlMnOpQrStUvWx",
+        "AKIAIOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "id": "mix1",
+      "cat": "MIXED",
+      "missed": [
+        "Bahnhofstr. 5"
+      ]
+    }
+  ],
+  "art9_leaks": [],
+  "errors": [],
+  "per_case": [
+    {
+      "id": "person1",
+      "cat": "PERSON",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 5.91,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Anna Müller",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "person2",
+      "cat": "PERSON",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 10.66,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Hans-Jürgen Schäfer",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "Beatrix von Habsburg",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "person3",
+      "cat": "PERSON",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 6.43,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Tobias Wöhrle",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "firma1",
+      "cat": "FIRMA",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 8.71,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Siemens AG",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "Schäfer & Partner GmbH",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "firma2",
+      "cat": "FIRMA",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 8.86,
+      "error": null,
+      "detected": [
+        {
+          "pii": "WHITESTAG.AI",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "Müller Logistik KG",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "ort1",
+      "cat": "ORT",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 4.72,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Bahnhofstraße 5",
+          "ok": false,
+          "via": "MISSED"
+        },
+        {
+          "pii": "Hamburg",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 1
+    },
+    {
+      "id": "ort2",
+      "cat": "ORT",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 8.24,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Marienplatz",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "München",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "iban1",
+      "cat": "IBAN",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 4.8,
+      "error": null,
+      "detected": [
+        {
+          "pii": "DE89 3704 0044 0532 0130 00",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "bic1",
+      "cat": "BIC",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.5,
+      "error": null,
+      "detected": [
+        {
+          "pii": "DE12 5001 0517 0648 4898 90",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "SOGEDEFFXXX",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "cc1",
+      "cat": "KREDITKARTE",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.49,
+      "error": null,
+      "detected": [
+        {
+          "pii": "4111 1111 1111 1111",
+          "ok": false,
+          "via": "MISSED"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 0
+    },
+    {
+      "id": "cc2",
+      "cat": "KREDITKARTE",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.49,
+      "error": null,
+      "detected": [
+        {
+          "pii": "5555 5555 5555 4444",
+          "ok": false,
+          "via": "MISSED"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 0
+    },
+    {
+      "id": "apikey1",
+      "cat": "API_KEY",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.5,
+      "error": null,
+      "detected": [
+        {
+          "pii": "sk-proj-9aZ3kLmN7pQ2rT8vWx1yB4cD6eF0gH5j",
+          "ok": false,
+          "via": "MISSED"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 0
+    },
+    {
+      "id": "apikey2",
+      "cat": "API_KEY",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.49,
+      "error": null,
+      "detected": [
+        {
+          "pii": "ghp_AbCdEf1234567890GhIjKlMnOpQrStUvWx",
+          "ok": false,
+          "via": "MISSED"
+        },
+        {
+          "pii": "AKIAIOSFODNN7EXAMPLE",
+          "ok": false,
+          "via": "MISSED"
+        }
+      ],
+      "changed": false,
+      "n_pii": 2,
+      "n_ok": 0
+    },
+    {
+      "id": "email1",
+      "cat": "EMAIL",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.48,
+      "error": null,
+      "detected": [
+        {
+          "pii": "anna.mueller@example.de",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "t.woehrle@firma-xy.de",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "phone1",
+      "cat": "PHONE",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.5,
+      "error": null,
+      "detected": [
+        {
+          "pii": "+49 170 1234567",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "030 9876543",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 2,
+      "n_ok": 2
+    },
+    {
+      "id": "steuer1",
+      "cat": "STEUERNUMMER",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.48,
+      "error": null,
+      "detected": [
+        {
+          "pii": "151/815/08156",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "mix1",
+      "cat": "MIXED",
+      "art9": false,
+      "fp": false,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 8.28,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Hans Schmidt",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "Bahnhofstr. 5",
+          "ok": false,
+          "via": "MISSED"
+        },
+        {
+          "pii": "Berlin",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "DE89 3704 0044 0532 0130 00",
+          "ok": true,
+          "via": "anonymized"
+        },
+        {
+          "pii": "+49 171 9998877",
+          "ok": true,
+          "via": "anonymized"
+        }
+      ],
+      "changed": true,
+      "n_pii": 5,
+      "n_ok": 4
+    },
+    {
+      "id": "art9_health1",
+      "cat": "ART9_HEALTH",
+      "art9": true,
+      "fp": false,
+      "blocked": true,
+      "reason": "art_9_data_detected",
+      "latency_s": 8.46,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Hans Schmidt",
+          "ok": true,
+          "via": "blocked"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "art9_health2",
+      "cat": "ART9_HEALTH",
+      "art9": true,
+      "fp": false,
+      "blocked": true,
+      "reason": "art_9_data_detected",
+      "latency_s": 8.64,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Anna Müller",
+          "ok": true,
+          "via": "blocked"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "art9_rel1",
+      "cat": "ART9_RELIGION",
+      "art9": true,
+      "fp": false,
+      "blocked": true,
+      "reason": "art_9_data_detected",
+      "latency_s": 9.0,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Mehmet Yilmaz",
+          "ok": true,
+          "via": "blocked"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "art9_pol1",
+      "cat": "ART9_POLITICS",
+      "art9": true,
+      "fp": false,
+      "blocked": true,
+      "reason": "art_9_data_detected",
+      "latency_s": 8.6,
+      "error": null,
+      "detected": [
+        {
+          "pii": "Weber",
+          "ok": true,
+          "via": "blocked"
+        }
+      ],
+      "changed": false,
+      "n_pii": 1,
+      "n_ok": 1
+    },
+    {
+      "id": "art9_pol2",
+      "cat": "ART9_POLITICS",
+      "art9": true,
+      "fp": false,
+      "blocked": true,
+      "reason": "art_9_data_detected",
+      "latency_s": 5.59,
+      "error": null,
+      "detected": [],
+      "changed": false,
+      "n_pii": 0,
+      "n_ok": 0
+    },
+    {
+      "id": "neg1",
+      "cat": "NEGATIVE",
+      "art9": false,
+      "fp": true,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.14,
+      "error": null,
+      "detected": [],
+      "changed": false,
+      "n_pii": 0,
+      "n_ok": 0
+    },
+    {
+      "id": "neg2",
+      "cat": "NEGATIVE",
+      "art9": false,
+      "fp": true,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 5.7,
+      "error": null,
+      "detected": [],
+      "changed": true,
+      "n_pii": 0,
+      "n_ok": 0
+    },
+    {
+      "id": "neg3",
+      "cat": "NEGATIVE",
+      "art9": false,
+      "fp": true,
+      "blocked": false,
+      "reason": null,
+      "latency_s": 1.32,
+      "error": null,
+      "detected": [],
+      "changed": false,
+      "n_pii": 0,
+      "n_ok": 0
+    }
+  ]
+}
