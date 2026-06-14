@@ -7,6 +7,8 @@ import { detectUstIds } from "./detectors/ust-id.js";
 import { detectSteuernummern } from "./detectors/steuernummer.js";
 import { detectPlzDe } from "./detectors/plz-de.js";
 import { detectUrls } from "./detectors/url.js";
+import { detectCreditCards } from "./detectors/creditcard.js";
+import { detectApiKeys } from "./detectors/apikey.js";
 
 export type DetectorKey =
   | "email"
@@ -16,7 +18,9 @@ export type DetectorKey =
   | "ust_id"
   | "steuernummer"
   | "plz_de"
-  | "url";
+  | "url"
+  | "kreditkarte"
+  | "api_key";
 
 const DETECTORS: Record<DetectorKey, (t: string) => Finding[]> = {
   email: detectEmails,
@@ -27,6 +31,8 @@ const DETECTORS: Record<DetectorKey, (t: string) => Finding[]> = {
   steuernummer: detectSteuernummern,
   plz_de: detectPlzDe,
   url: detectUrls,
+  kreditkarte: detectCreditCards,
+  api_key: detectApiKeys,
 };
 
 export interface PiiDetectOptions {

@@ -11,7 +11,9 @@ export type FindingType =
   | "FIRMA"
   | "ORT"
   | "GESCHAEFTSGEHEIMNIS"
-  | "ART_9";
+  | "ART_9"
+  | "KREDITKARTE"
+  | "API_KEY";
 
 export type Confidence = "low" | "medium" | "high";
 

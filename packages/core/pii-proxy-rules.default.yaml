@@ -9,6 +9,8 @@ detect:
     - steuernummer
     - plz_de
     - url
+    - kreditkarte
+    - api_key
   llm:
     - person
     - firma
