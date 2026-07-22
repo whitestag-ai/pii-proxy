@@ -28,11 +28,27 @@ export const CACHE_MAX_ENTRIES = 512;
 
 export type ChunkClassifier = (chunk: string) => Promise<Finding[]>;
 
+/**
+ * Persistente L2 hinter der In-Memory-L1. Synchron (better-sqlite3-artig),
+ * damit das schnelle sync get/set der L1 erhalten bleibt. `get` MUSS bei jedem
+ * Fehler (fehlender/rotierter Schlüssel etc.) `undefined` liefern, niemals
+ * werfen — sonst bräche die fail-closed-Klassifikation.
+ */
+export interface ChunkCacheBackingStore {
+  get(hash: string): Finding[] | undefined;
+  set(hash: string, findings: Finding[]): void;
+}
+
 export interface ChunkCacheOptions {
   ttlMs?: number;
   maxEntries?: number;
   /** Injizierbare Uhr (ms). Default: Date.now. Für Tests deterministisch. */
   clock?: () => number;
+  /**
+   * Optionaler persistenter Backing-Store (L2). Fehlt er, verhält sich der
+   * Cache wie bisher (reine In-Memory-L1).
+   */
+  store?: ChunkCacheBackingStore;
 }
 
 interface CacheEntry {
@@ -49,28 +65,46 @@ export class ChunkClassifierCache {
   private readonly ttlMs: number;
   private readonly maxEntries: number;
   private readonly clock: () => number;
+  private readonly store?: ChunkCacheBackingStore;
   private readonly map = new Map<string, CacheEntry>();
 
   constructor(opts: ChunkCacheOptions = {}) {
     this.ttlMs = opts.ttlMs ?? CACHE_TTL_MS;
     this.maxEntries = opts.maxEntries ?? CACHE_MAX_ENTRIES;
     this.clock = opts.clock ?? Date.now;
+    this.store = opts.store;
   }
 
   get(hash: string): Finding[] | undefined {
     const entry = this.map.get(hash);
-    if (entry === undefined) return undefined;
-    if (entry.expiresAt <= this.clock()) {
-      this.map.delete(hash);
-      return undefined;
+    if (entry !== undefined) {
+      if (entry.expiresAt <= this.clock()) {
+        this.map.delete(hash);
+      } else {
+        // LRU: als zuletzt verwendet markieren (ans Ende verschieben).
+        this.map.delete(hash);
+        this.map.set(hash, entry);
+        return entry.findings;
+      }
     }
-    // LRU: als zuletzt verwendet markieren (ans Ende verschieben).
-    this.map.delete(hash);
-    this.map.set(hash, entry);
-    return entry.findings;
+    // L1-Miss -> persistente L2 konsultieren und bei Treffer die L1 warmziehen.
+    if (this.store !== undefined) {
+      const fromStore = this.store.get(hash);
+      if (fromStore !== undefined) {
+        this.insertL1(hash, fromStore);
+        return fromStore;
+      }
+    }
+    return undefined;
   }
 
   set(hash: string, findings: Finding[]): void {
+    this.insertL1(hash, findings);
+    // Write-through in die L2, damit der Eintrag Neustarts überlebt.
+    this.store?.set(hash, findings);
+  }
+
+  private insertL1(hash: string, findings: Finding[]): void {
     if (this.map.has(hash)) this.map.delete(hash);
     this.map.set(hash, { findings, expiresAt: this.clock() + this.ttlMs });
     while (this.map.size > this.maxEntries) {

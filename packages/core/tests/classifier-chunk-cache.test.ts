@@ -166,6 +166,55 @@ describe("classifyEntitiesChunked", () => {
   });
 });
 
+describe("ChunkClassifierCache — L2 Backing-Store", () => {
+  // Einfacher, deterministischer Fake-Store (Map) mit get/set wie der echte
+  // persistente Store. Geteilt über zwei ChunkClassifierCache-Instanzen =
+  // Simulation eines Proxy-Neustarts (frische In-Memory-L1, gleiche L2).
+  function makeFakeStore() {
+    const m = new Map<string, Finding[]>();
+    let sets = 0;
+    return {
+      get: (h: string) => m.get(h),
+      set: (h: string, f: Finding[]) => {
+        sets += 1;
+        m.set(h, f);
+      },
+      sets: () => sets,
+      size: () => m.size,
+    };
+  }
+
+  it("schreibt Findings write-through in die L2", async () => {
+    const store = makeFakeStore();
+    const cache = new ChunkClassifierCache({ store });
+    const c = makeCountingClassifier([person("Dr. Anna Müller")]);
+    await classifyEntitiesChunked("Dr. Anna Müller war da.", c.fn, cache);
+    expect(store.size()).toBe(1);
+    expect(store.sets()).toBe(1);
+  });
+
+  it("nach 'Neustart' (frische L1, gleiche L2): 0 Klassifikator-Aufrufe, Findings aus L2", async () => {
+    const store = makeFakeStore();
+    const text = "Dr. Anna Müller hat angerufen.";
+
+    const c1 = makeCountingClassifier([person("Dr. Anna Müller")]);
+    await classifyEntitiesChunked(text, c1.fn, new ChunkClassifierCache({ store }));
+    expect(c1.calls()).toBe(1);
+
+    const c2 = makeCountingClassifier([person("Dr. Anna Müller")]);
+    const findings = await classifyEntitiesChunked(text, c2.fn, new ChunkClassifierCache({ store }));
+    expect(c2.calls()).toBe(0); // komplett aus L2 bedient
+    expect(findings.some((f) => f.value === "Dr. Anna Müller")).toBe(true);
+  });
+
+  it("ohne Store verhält sich der Cache unverändert (reine L1)", async () => {
+    const cache = new ChunkClassifierCache();
+    const c = makeCountingClassifier([person("Dr. Anna Müller")]);
+    await classifyEntitiesChunked("Dr. Anna Müller war da.", c.fn, cache);
+    expect(c.calls()).toBe(1);
+  });
+});
+
 describe("ChunkClassifierCache TTL + LRU", () => {
   it("verfällt Einträge nach TTL (injizierbare Uhr)", async () => {
     let now = 1_000_000;

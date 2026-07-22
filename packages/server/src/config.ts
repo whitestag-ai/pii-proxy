@@ -1,5 +1,5 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 const Schema = z.object({
@@ -11,6 +11,12 @@ const Schema = z.object({
   PII_PROXY_CLASSIFIER_URL: z.string().default("http://localhost:1234"),
   PII_PROXY_CLASSIFIER_MODEL: z.string().default("gemma-4-26b"),
   PII_PROXY_CLASSIFIER_TIMEOUT_MS: z.coerce.number().default(30000),
+  PII_PROXY_CLASSIFIER_RETRIES: z.coerce.number().default(2),
+  PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS: z.coerce.number().default(1500),
+  // Persistenter, verschlüsselter Chunk-Findings-Cache. Leerer String schaltet
+  // ihn ab (reiner In-Memory-Cache). Default: neben der Mapping-DB.
+  PII_PROXY_CHUNK_CACHE_DB: z.string().optional(),
+  PII_PROXY_CHUNK_CACHE_TTL_SECONDS: z.coerce.number().default(7 * 24 * 60 * 60),
   PII_PROXY_TELEGRAM_BOT_TOKEN: z.string().optional(),
   PII_PROXY_TELEGRAM_CHAT_ID: z.string().optional(),
 });
@@ -21,7 +27,10 @@ export interface ServiceConfig {
   sharedKey: string;
   mappingDbPath: string;
   auditDir: string;
-  classifier: { url: string; model: string; timeoutMs: number };
+  classifier: { url: string; model: string; timeoutMs: number; retries: number; retryBackoffMs: number };
+  /** Pfad zur persistenten Chunk-Cache-DB, oder undefined (deaktiviert). */
+  chunkCacheDbPath?: string;
+  chunkCacheTtlSeconds: number;
   telegram?: { botToken: string; chatId: string };
 }
 
@@ -30,6 +39,12 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
   const telegram = parsed.PII_PROXY_TELEGRAM_BOT_TOKEN && parsed.PII_PROXY_TELEGRAM_CHAT_ID
     ? { botToken: parsed.PII_PROXY_TELEGRAM_BOT_TOKEN, chatId: parsed.PII_PROXY_TELEGRAM_CHAT_ID }
     : undefined;
+  // Leerer String = bewusst deaktiviert; nicht gesetzt = Default neben Mapping-DB.
+  const chunkCacheDbPath = parsed.PII_PROXY_CHUNK_CACHE_DB === undefined
+    ? join(dirname(parsed.PII_PROXY_MAPPING_DB), "chunk-cache.db")
+    : parsed.PII_PROXY_CHUNK_CACHE_DB.trim() === ""
+      ? undefined
+      : parsed.PII_PROXY_CHUNK_CACHE_DB;
   return {
     port: parsed.PII_PROXY_PORT,
     bind: parsed.PII_PROXY_BIND,
@@ -40,7 +55,11 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
       url: parsed.PII_PROXY_CLASSIFIER_URL,
       model: parsed.PII_PROXY_CLASSIFIER_MODEL,
       timeoutMs: parsed.PII_PROXY_CLASSIFIER_TIMEOUT_MS,
+      retries: parsed.PII_PROXY_CLASSIFIER_RETRIES,
+      retryBackoffMs: parsed.PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS,
     },
+    chunkCacheDbPath,
+    chunkCacheTtlSeconds: parsed.PII_PROXY_CHUNK_CACHE_TTL_SECONDS,
     telegram,
   };
 }

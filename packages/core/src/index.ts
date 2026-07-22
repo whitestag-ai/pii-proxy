@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { detectPii, type DetectorKey } from "./pii-detector.js";
 import { classifyEntities, ClassifierUnavailableError, type ClassifierConfig } from "./entity-classifier.js";
 import { ChunkClassifierCache, classifyEntitiesChunked } from "./classifier-chunk-cache.js";
+import { EncryptedChunkCacheStore } from "./chunk-cache-store.js";
 import { anonymizeText } from "./anonymizer.js";
 import { deanonymizeText } from "./deanonymizer.js";
 import { MappingStore } from "./mapping-store.js";
@@ -27,6 +28,15 @@ export interface PiiProxyOptions {
   auditDir: string;
   classifier: ClassifierConfig;
   rules?: Rules;
+  /**
+   * Optionaler Pfad zur persistenten (verschlüsselten) Chunk-Findings-DB.
+   * Gesetzt → der statische Prompt-Prefix wird je Chunk nur EINMAL klassifiziert
+   * und überlebt Proxy-Neustarts. Verschlüsselt mit `mappingKey` (at rest).
+   * Fehlt der Pfad → reiner In-Memory-Cache (altes Verhalten).
+   */
+  chunkCacheDbPath?: string;
+  /** TTL der persistenten Chunk-Einträge in Sekunden. Default: 7 Tage. */
+  chunkCacheTtlSeconds?: number;
 }
 
 export interface PiiProxy {
@@ -53,7 +63,15 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
   // Per-Chunk-Findings-Cache: der riesige statische System-/Skills-Kontext
   // (über Aufrufe identisch) wird je eindeutigem Chunk nur einmal klassifiziert
   // und danach aus dem Cache bedient. Eine Cache-Instanz je Proxy.
-  const chunkCache = new ChunkClassifierCache();
+  // Optional mit persistenter, verschlüsselter L2 (überlebt Neustarts).
+  const chunkCacheStore = opts.chunkCacheDbPath
+    ? new EncryptedChunkCacheStore({
+        path: opts.chunkCacheDbPath,
+        key: opts.mappingKey,
+        ttlSeconds: opts.chunkCacheTtlSeconds ?? 7 * 24 * 60 * 60,
+      })
+    : undefined;
+  const chunkCache = new ChunkClassifierCache({ store: chunkCacheStore });
 
   return {
     async anonymize(req: AnonymizeRequest): Promise<AnonymizeResponse> {
@@ -155,6 +173,7 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
 
     close(): void {
       store.close();
+      chunkCacheStore?.close();
     },
   };
 }

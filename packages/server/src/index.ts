@@ -31,6 +31,8 @@ async function main(): Promise<void> {
     mappingKey,
     auditDir: cfg.auditDir,
     classifier: cfg.classifier,
+    chunkCacheDbPath: cfg.chunkCacheDbPath,
+    chunkCacheTtlSeconds: cfg.chunkCacheTtlSeconds,
   });
 
   const app = await buildServer({
