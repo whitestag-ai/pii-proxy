@@ -8,8 +8,11 @@ import {
   MAX_CHUNK_CHARS,
   CACHE_TTL_MS,
   CACHE_MAX_ENTRIES,
+  DEFAULT_CLASSIFY_CONCURRENCY,
   type ChunkClassifier,
 } from "../src/classifier-chunk-cache.js";
+
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function person(value: string, confidence: Finding["confidence"] = "high"): Finding {
   return { type: "PERSON", value, start: 0, end: value.length, confidence, source: "llm" };
@@ -163,6 +166,56 @@ describe("classifyEntitiesChunked", () => {
     const findings = await classifyEntitiesChunked(text, ok.fn, cache);
     expect(ok.calls()).toBe(1);
     expect(findings.some((f) => f.value === "Dr. Anna Müller")).toBe(true);
+  });
+});
+
+describe("classifyEntitiesChunked — bounded Parallelität", () => {
+  it("exponiert einen Default-Concurrency-Wert > 1", () => {
+    expect(DEFAULT_CLASSIFY_CONCURRENCY).toBeGreaterThan(1);
+  });
+
+  it("klassifiziert cache-missende Chunks parallel, aber gedeckelt durch das Limit", async () => {
+    // Text, der in mehrere distinkte Chunks zerfällt.
+    // Große, distinkte Absätze (~1500 Zeichen) -> mehrere Chunks ≤ MAX_CHUNK_CHARS.
+    const paras = Array.from({ length: 12 }, (_, i) =>
+      `Absatz ${i}: ${`Inhalt ${i} `.repeat(210)}`,
+    );
+    const text = paras.join("\n\n");
+    const chunks = splitIntoChunks(text);
+    expect(chunks.length).toBeGreaterThanOrEqual(4);
+
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const classify: ChunkClassifier = async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await delay(10);
+      inFlight -= 1;
+      return [];
+    };
+
+    const cache = new ChunkClassifierCache();
+    const limit = 3;
+    await classifyEntitiesChunked(text, classify, cache, limit);
+
+    // Parallelität greift wirklich (mehr als 1 gleichzeitig) …
+    expect(maxInFlight).toBeGreaterThan(1);
+    // … aber nie über dem Limit.
+    expect(maxInFlight).toBeLessThanOrEqual(limit);
+  });
+
+  it("klassifiziert identische Chunks auch nebenläufig nur EINMAL (in-flight Dedup)", async () => {
+    // Viele identische Sätze -> greedy gepackte, byte-identische Chunks.
+    const text = "Foo. ".repeat(1600);
+    const distinct = new Set(splitIntoChunks(text)).size;
+    expect(distinct).toBeLessThan(splitIntoChunks(text).length); // es gibt Duplikate
+
+    const c = makeCountingClassifier([]);
+    const cache = new ChunkClassifierCache();
+    await classifyEntitiesChunked(text, c.fn, cache, 4);
+
+    // Trotz Nebenläufigkeit: pro EINDEUTIGEM Chunk genau ein Aufruf.
+    expect(c.calls()).toBe(distinct);
   });
 });
 
