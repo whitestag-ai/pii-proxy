@@ -44,7 +44,20 @@ function buildContext() {
     PII_PROXY_MAPPING_DB: path.join(data, "mappings.db"),
     PII_PROXY_AUDIT_DIR: path.join(data, "audit"),
   };
-  for (const optional of ["PII_PROXY_PORT", "PII_PROXY_BIND", "PII_PROXY_CLASSIFIER_URL", "PII_PROXY_CLASSIFIER_MODEL", "PII_PROXY_CLASSIFIER_TIMEOUT_MS", "PII_PROXY_TELEGRAM_BOT_TOKEN", "PII_PROXY_TELEGRAM_CHAT_ID"]) {
+  for (const optional of [
+    "PII_PROXY_PORT",
+    "PII_PROXY_BIND",
+    "PII_PROXY_CLASSIFIER_URL",
+    "PII_PROXY_CLASSIFIER_MODEL",
+    "PII_PROXY_CLASSIFIER_FALLBACK_MODEL",
+    "PII_PROXY_CLASSIFIER_TIMEOUT_MS",
+    "PII_PROXY_CLASSIFIER_RETRIES",
+    "PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS",
+    "PII_PROXY_CHUNK_CACHE_DB",
+    "PII_PROXY_CHUNK_CACHE_TTL_SECONDS",
+    "PII_PROXY_TELEGRAM_BOT_TOKEN",
+    "PII_PROXY_TELEGRAM_CHAT_ID",
+  ]) {
     if (process.env[optional]) env[optional] = process.env[optional];
   }
   return {
