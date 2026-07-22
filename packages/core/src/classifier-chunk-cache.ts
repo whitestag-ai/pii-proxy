@@ -25,16 +25,6 @@ export const MAX_CHUNK_CHARS = 4000;
 export const CACHE_TTL_MS = 60 * 60 * 1000;
 /** Maximale Anzahl Cache-Einträge (LRU-Eviction). */
 export const CACHE_MAX_ENTRIES = 512;
-/**
- * Default-Anzahl gleichzeitig laufender Klassifikator-Aufrufe für
- * cache-missende Chunks. Ein großer Agenten-Prompt zerfällt in dutzende
- * Chunks; sie sequenziell abzuarbeiten summiert die Latenz und macht das
- * (60s-)Timeout-Fenster fragil, sobald das geteilte gemma-Modell unter Last
- * steht. Bounded-parallel klassifizieren kürzt die Cold-Cache-Latenz um ~das
- * Concurrency-Fache und schließt das Timeout-Fenster, ohne den geteilten
- * Classifier komplett zu überfahren.
- */
-export const DEFAULT_CLASSIFY_CONCURRENCY = 4;
 
 export type ChunkClassifier = (chunk: string) => Promise<Finding[]>;
 
@@ -244,59 +234,8 @@ export async function classifyEntitiesChunked(
   text: string,
   classify: ChunkClassifier,
   cache: ChunkClassifierCache,
-  concurrency: number = DEFAULT_CLASSIFY_CONCURRENCY,
 ): Promise<Finding[]> {
   const chunks = splitIntoChunks(text);
-  const n = chunks.length;
-
-  // Findings je Chunk-Index — reihenfolge-erhaltend, damit der Merge (erstes
-  // Vorkommen gewinnt) deterministisch bleibt, egal in welcher Reihenfolge die
-  // nebenläufigen Klassifikationen fertig werden.
-  const perChunk: Array<Finding[]> = new Array(n);
-
-  // In-flight-Dedup: byte-identische Chunks teilen sich EINEN Klassifikator-
-  // Aufruf, auch wenn sie im selben Lauf gleichzeitig verarbeitet werden. Die
-  // Map ist lauf-lokal. Nur ERFOLGREICHE Klassifikationen landen im (lauf-
-  // übergreifenden) Cache — ein Fehler propagiert und darf keinen Eintrag
-  // hinterlassen (fail-closed / GDPR).
-  const inFlight = new Map<string, Promise<Finding[]>>();
-  const classifyChunk = (chunk: string): Promise<Finding[]> => {
-    const hash = hashChunk(chunk);
-    const cached = cache.get(hash);
-    if (cached !== undefined) return Promise.resolve(cached);
-    const pending = inFlight.get(hash);
-    if (pending !== undefined) return pending;
-    const p = (async () => {
-      const findings = await classify(chunk);
-      cache.set(hash, findings);
-      return findings;
-    })();
-    inFlight.set(hash, p);
-    return p;
-  };
-
-  // Bounded-paralleler Worker-Pool: höchstens `concurrency` Klassifikationen
-  // gleichzeitig. Der ERSTE Fehler wird festgehalten und propagiert (fail-
-  // closed); danach ziehen die Worker keine weiteren Chunks mehr. Jeder `await`
-  // hat try/catch, daher rejected keine Worker-Promise — Promise.all löst
-  // sauber auf, und wir werfen den gemerkten Fehler danach selbst.
-  let next = 0;
-  let firstError: unknown;
-  const worker = async (): Promise<void> => {
-    while (firstError === undefined) {
-      const i = next++;
-      if (i >= n) return;
-      try {
-        perChunk[i] = await classifyChunk(chunks[i]);
-      } catch (err) {
-        if (firstError === undefined) firstError = err;
-        return;
-      }
-    }
-  };
-  const poolSize = Math.max(1, Math.min(Math.floor(concurrency) || 1, n));
-  await Promise.all(Array.from({ length: poolSize }, () => worker()));
-  if (firstError !== undefined) throw firstError;
 
   // type+value -> Finding (Dedup). Erstes Auftreten gewinnt; bei höherer
   // Confidence eines späteren Duplikats wird hochgestuft (konservativ).
@@ -308,8 +247,14 @@ export async function classifyEntitiesChunked(
   const merged = new Map<string, Finding>();
   const rank: Record<Finding["confidence"], number> = { low: 0, medium: 1, high: 2 };
 
-  for (let i = 0; i < n; i++) {
-    for (const f of perChunk[i]) {
+  for (const chunk of chunks) {
+    const hash = hashChunk(chunk);
+    let findings = cache.get(hash);
+    if (findings === undefined) {
+      findings = await classify(chunk);
+      cache.set(hash, findings);
+    }
+    for (const f of findings) {
       // value muss exakter Substring des Volltexts sein, sonst verwerfen
       // (defensive Übereinstimmung mit dem entity-classifier-Verhalten).
       const start = text.indexOf(f.value);
