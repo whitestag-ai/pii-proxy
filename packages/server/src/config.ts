@@ -10,6 +10,9 @@ const Schema = z.object({
   PII_PROXY_AUDIT_DIR: z.string().default(join(homedir(), ".pii-proxy", "audit")),
   PII_PROXY_CLASSIFIER_URL: z.string().default("http://localhost:1234"),
   PII_PROXY_CLASSIFIER_MODEL: z.string().default("gemma-4-26b"),
+  // Fallback-Classifier, wenn das Primärmodell nicht erreichbar ist (z. B.
+  // RTX nachts aus). Sollte ein 24/7 geladenes Modell sein.
+  PII_PROXY_CLASSIFIER_FALLBACK_MODEL: z.string().optional(),
   PII_PROXY_CLASSIFIER_TIMEOUT_MS: z.coerce.number().default(30000),
   PII_PROXY_CLASSIFIER_RETRIES: z.coerce.number().default(2),
   PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS: z.coerce.number().default(1500),
@@ -27,7 +30,7 @@ export interface ServiceConfig {
   sharedKey: string;
   mappingDbPath: string;
   auditDir: string;
-  classifier: { url: string; model: string; timeoutMs: number; retries: number; retryBackoffMs: number };
+  classifier: { url: string; model: string; fallbackModel?: string; timeoutMs: number; retries: number; retryBackoffMs: number };
   /** Pfad zur persistenten Chunk-Cache-DB, oder undefined (deaktiviert). */
   chunkCacheDbPath?: string;
   chunkCacheTtlSeconds: number;
@@ -54,6 +57,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
     classifier: {
       url: parsed.PII_PROXY_CLASSIFIER_URL,
       model: parsed.PII_PROXY_CLASSIFIER_MODEL,
+      fallbackModel: parsed.PII_PROXY_CLASSIFIER_FALLBACK_MODEL,
       timeoutMs: parsed.PII_PROXY_CLASSIFIER_TIMEOUT_MS,
       retries: parsed.PII_PROXY_CLASSIFIER_RETRIES,
       retryBackoffMs: parsed.PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS,

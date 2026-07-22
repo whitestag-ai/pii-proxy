@@ -113,4 +113,146 @@ describe("classifyEntities", () => {
       classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 100 }),
     ).rejects.toThrow("classifier_unavailable");
   });
+
+  // --- Part 3: Retry bei transienten Fehlern (geteiltes Modell unter Last) ---
+
+  function okFindingsResponse(): Response {
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { role: "assistant", content: JSON.stringify({
+          findings: [{ type: "PERSON", value: "Anna Müller", confidence: "high" }],
+        }) } }],
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("wiederholt bei transientem fetch-Fehler und liefert beim Folgeversuch Findings", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockRejectedValueOnce(new Error("network timeout"))
+      .mockResolvedValueOnce(okFindingsResponse());
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234", model: "qwen3.6", timeoutMs: 100,
+      retries: 2, retryBackoffMs: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ type: "PERSON", value: "Anna Müller" });
+  });
+
+  it("wiederholt bei HTTP 5xx, aber nicht bei 4xx", async () => {
+    const fiveHundred = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(okFindingsResponse());
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234", model: "x", timeoutMs: 100, retries: 1, retryBackoffMs: 0,
+    });
+    expect(fiveHundred).toHaveBeenCalledTimes(2);
+    expect(findings).toHaveLength(1);
+
+    vi.restoreAllMocks();
+    const fourHundred = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValue(new Response("bad", { status: 400 }));
+    await expect(
+      classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 100, retries: 3, retryBackoffMs: 0 }),
+    ).rejects.toThrow("classifier_unavailable");
+    expect(fourHundred).toHaveBeenCalledTimes(1); // 4xx = nicht retrybar
+  });
+
+  it("gibt nach erschöpften Retries fail-closed auf", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockRejectedValue(new Error("down"));
+    await expect(
+      classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 100, retries: 2, retryBackoffMs: 0 }),
+    ).rejects.toThrow("classifier_unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(3); // 1 Versuch + 2 Retries
+  });
+
+  // --- Part 4: Fallback-Modell (Nacht / RTX-Classifier-Ausfall) ---
+
+  // Routet fetch anhand des `model` im Request-Body: pro Modell entweder eine
+  // Response oder ein Error (throw). Erfasst die aufgerufenen Modelle in Reihenfolge.
+  function routeByModel(
+    routes: Record<string, () => Response | Error>,
+  ): { calls: () => string[] } {
+    const calls: string[] = [];
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      const model = JSON.parse(String((init as RequestInit).body)).model as string;
+      calls.push(model);
+      const r = routes[model];
+      if (!r) throw new Error(`unerwartetes Modell: ${model}`);
+      const out = r();
+      if (out instanceof Error) throw out;
+      return out;
+    });
+    return { calls: () => calls };
+  }
+
+  it("fällt bei nicht erreichbarem Primärmodell auf fallbackModel zurück", async () => {
+    const t = routeByModel({
+      "rtx-qat": () => new Error("network down"), // RTX nachts aus
+      "studio-gemma": () => okFindingsResponse(),
+    });
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234",
+      model: "rtx-qat",
+      fallbackModel: "studio-gemma",
+      timeoutMs: 100,
+      retries: 0,
+      retryBackoffMs: 0,
+    });
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ type: "PERSON", value: "Anna Müller" });
+    expect(t.calls()).toEqual(["rtx-qat", "studio-gemma"]);
+  });
+
+  it("fällt auch bei 4xx (Modell nicht geladen) auf fallback zurück", async () => {
+    const t = routeByModel({
+      "rtx-qat": () => new Response("model not found", { status: 404 }),
+      "studio-gemma": () => okFindingsResponse(),
+    });
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234",
+      model: "rtx-qat",
+      fallbackModel: "studio-gemma",
+      timeoutMs: 100,
+      retries: 0,
+      retryBackoffMs: 0,
+    });
+    expect(findings).toHaveLength(1);
+    expect(t.calls()).toEqual(["rtx-qat", "studio-gemma"]);
+  });
+
+  it("nutzt den Fallback NICHT wenn das Primärmodell erfolgreich ist", async () => {
+    const t = routeByModel({
+      "rtx-qat": () => okFindingsResponse(),
+      "studio-gemma": () => new Error("darf nicht aufgerufen werden"),
+    });
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234",
+      model: "rtx-qat",
+      fallbackModel: "studio-gemma",
+      timeoutMs: 100,
+      retries: 0,
+      retryBackoffMs: 0,
+    });
+    expect(findings).toHaveLength(1);
+    expect(t.calls()).toEqual(["rtx-qat"]); // Fallback nie berührt
+  });
+
+  it("ohne fallbackModel wirft der Primärfehler unverändert (kein Fallback)", async () => {
+    const t = routeByModel({ "rtx-qat": () => new Error("down") });
+    await expect(
+      classifyEntities("text", {
+        url: "http://localhost:1234",
+        model: "rtx-qat",
+        timeoutMs: 100,
+        retries: 0,
+        retryBackoffMs: 0,
+      }),
+    ).rejects.toThrow("classifier_unavailable");
+    expect(t.calls()).toEqual(["rtx-qat"]);
+  });
 });

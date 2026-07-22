@@ -7,18 +7,97 @@ import {
 export interface ClassifierConfig {
   url: string;
   model: string;
+  /**
+   * Optionales Fallback-Modell für den Fall, dass das Primärmodell nicht
+   * klassifizieren kann (nachts ist z. B. die RTX aus → `gemma-4-12b-qat`
+   * unerreichbar). Scheitert das Primärmodell mit `ClassifierUnavailableError`
+   * (auch nach Retries), wird EINMAL das Fallback-Modell mit eigenen Retries
+   * versucht. Muss ein Modell sein, das rund um die Uhr geladen ist
+   * (z. B. das Studio-residente `google/gemma-4-12b`).
+   */
+  fallbackModel?: string;
   timeoutMs: number;
+  /**
+   * Anzahl zusätzlicher Wiederholungen bei *transienten* Classifier-Fehlern
+   * (Timeout/Netzwerk/HTTP 5xx), bevor fail-closed greift. Default: 0
+   * (= altes Verhalten, ein einziger Versuch). Schützt gegen das geteilte
+   * LM-Studio-Modell, das unter Last kurzzeitig sättigt und timeoutet.
+   */
+  retries?: number;
+  /** Basis-Backoff in ms zwischen den Versuchen (linear * Versuchsnr.). Default: 1500. */
+  retryBackoffMs?: number;
 }
 
 export class ClassifierUnavailableError extends Error {
-  constructor(reason: string) {
+  /** true, wenn ein erneuter Versuch sinnvoll ist (Timeout/Netzwerk/5xx). */
+  readonly retryable: boolean;
+  constructor(reason: string, retryable = false) {
     super(`classifier_unavailable: ${reason}`);
+    this.retryable = retryable;
   }
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Classifier-Aufruf mit beschränktem Retry bei transienten Fehlern.
+ *
+ * Transient (= retrybar): Timeout/Netzwerk (`fetch_failed`) und HTTP 5xx —
+ * typisch wenn das geteilte gemma-Modell gerade für einen anderen Agenten
+ * generiert. Nicht-transient (HTTP 4xx, `invalid_json`, `schema_mismatch`)
+ * scheitert sofort fail-closed, da ein Retry dort nichts verbessert.
+ */
 export async function classifyEntities(
   text: string,
   cfg: ClassifierConfig,
+): Promise<Finding[]> {
+  // Modell-Reihenfolge: Primär, dann (falls gesetzt) Fallback. Scheitert das
+  // Primärmodell mit ClassifierUnavailableError — inkl. „Modell nicht geladen"
+  // (RTX nachts aus) —, wird das Fallback-Modell versucht. Andere Fehler werden
+  // nicht maskiert.
+  const models = [cfg.model];
+  if (cfg.fallbackModel && cfg.fallbackModel !== cfg.model) {
+    models.push(cfg.fallbackModel);
+  }
+  let lastErr: unknown;
+  for (const model of models) {
+    try {
+      return await classifyWithRetries(text, cfg, model);
+    } catch (err) {
+      lastErr = err;
+      if (!(err instanceof ClassifierUnavailableError)) throw err;
+      // Classifier-Ausfall -> nächstes Modell (Fallback) probieren.
+    }
+  }
+  throw lastErr;
+}
+
+/** Ein Modell mit dem konfigurierten Retry-Verhalten klassifizieren. */
+async function classifyWithRetries(
+  text: string,
+  cfg: ClassifierConfig,
+  model: string,
+): Promise<Finding[]> {
+  const maxRetries = Math.max(0, cfg.retries ?? 0);
+  const backoffMs = cfg.retryBackoffMs ?? 1500;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await attemptClassify(text, cfg, model);
+    } catch (err) {
+      lastErr = err;
+      const retryable = err instanceof ClassifierUnavailableError && err.retryable;
+      if (!retryable || attempt === maxRetries) break;
+      await sleep(backoffMs * (attempt + 1));
+    }
+  }
+  throw lastErr;
+}
+
+async function attemptClassify(
+  text: string,
+  cfg: ClassifierConfig,
+  model: string,
 ): Promise<Finding[]> {
   let response: Response;
   try {
@@ -26,7 +105,7 @@ export async function classifyEntities(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: cfg.model,
+        model,
         messages: [
           { role: "system", content: CLASSIFIER_SYSTEM_PROMPT },
           { role: "user", content: text },
@@ -69,11 +148,13 @@ export async function classifyEntities(
       signal: AbortSignal.timeout(cfg.timeoutMs),
     });
   } catch (err) {
-    throw new ClassifierUnavailableError(`fetch_failed: ${(err as Error).message}`);
+    // Netzwerkfehler & Timeout (AbortError) sind transient -> retrybar.
+    throw new ClassifierUnavailableError(`fetch_failed: ${(err as Error).message}`, true);
   }
 
   if (!response.ok) {
-    throw new ClassifierUnavailableError(`http_${response.status}`);
+    // 5xx = serverseitig/Last (z. B. Modell lädt/sättigt) -> retrybar; 4xx nicht.
+    throw new ClassifierUnavailableError(`http_${response.status}`, response.status >= 500);
   }
 
   const data = (await response.json()) as {
