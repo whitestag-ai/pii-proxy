@@ -26,6 +26,24 @@ describe("loadConfig", () => {
     expect(cfg.telegram).toEqual({ botToken: "bot-token", chatId: "12345" });
   });
 
+  // Reasoning kostet auf dem Klassifikator-Modell das ~2,7-fache an Zeit ohne
+  // besseres Ergebnis — der Default schaltet es deshalb ab. Überschreibbar für
+  // Setups, deren Inferenz-Server `reasoning_effort` nicht kennt.
+  it("schaltet Reasoning im Klassifikator standardmäßig ab", () => {
+    const cfg = loadConfig({
+      PII_PROXY_SHARED_KEY: "secret-key-32-bytes-min-length-padding-more",
+    });
+    expect(cfg.classifier.reasoningEffort).toBe("none");
+  });
+
+  it("erlaubt das Überschreiben des Reasoning-Budgets per env", () => {
+    const cfg = loadConfig({
+      PII_PROXY_SHARED_KEY: "secret-key-32-bytes-min-length-padding-more",
+      PII_PROXY_CLASSIFIER_REASONING_EFFORT: "low",
+    });
+    expect(cfg.classifier.reasoningEffort).toBe("low");
+  });
+
   it("rejects short shared key", () => {
     expect(() => loadConfig({
       PII_PROXY_SHARED_KEY: "short",

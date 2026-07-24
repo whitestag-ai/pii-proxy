@@ -26,6 +26,16 @@ export interface ClassifierConfig {
   retries?: number;
   /** Basis-Backoff in ms zwischen den Versuchen (linear * Versuchsnr.). Default: 1500. */
   retryBackoffMs?: number;
+  /**
+   * Reasoning-Budget des Klassifikator-Modells. Die Entitäten-Extraktion
+   * braucht kein Chain-of-Thought — auf `gemma-4-12b-qat` gemessen: 1920
+   * reasoning-Tokens / 37,3 s pro 4000-Zeichen-Chunk mit Reasoning gegen
+   * 0 Tokens / 13,7 s mit `"none"`, bei identischen Findings. Bei ~59 Chunks
+   * je Agenten-Prompt entscheidet das darüber, ob die Anfrage im
+   * Client-Timeout bleibt. Nicht gesetzt = Feld wird weggelassen (Verhalten
+   * unverändert, für Server die `reasoning_effort` nicht kennen).
+   */
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 }
 
 export class ClassifierUnavailableError extends Error {
@@ -111,6 +121,7 @@ async function attemptClassify(
           { role: "user", content: text },
         ],
         stream: false,
+        ...(cfg.reasoningEffort ? { reasoning_effort: cfg.reasoningEffort } : {}),
         response_format: {
           type: "json_schema",
           json_schema: {

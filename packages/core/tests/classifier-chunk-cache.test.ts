@@ -254,3 +254,51 @@ describe("ChunkClassifierCache TTL + LRU", () => {
     expect(again.calls()).toBe(1);
   });
 });
+
+// --- Positionsstabilität der Chunk-Grenzen ---
+//
+// Agenten-Prompts wachsen zwischen zwei Turns nur an wenigen Stellen, aber der
+// Klassifikator-Cache greift nur bei exakt gleichem Chunk-Text. Werden die
+// Grenzen greedy von vorne gepackt, verschiebt schon eine kurze Einfügung am
+// Anfang (Claude Code hängt pro Request u.a. einen frischen Zeitstempel an)
+// ALLE folgenden Grenzen — jeder Chunk bekommt einen neuen Hash und der
+// komplette Prompt wird neu klassifiziert. Am laufenden Proxy gemessen:
+// identischer Text 0,0 s, derselbe Text mit 22 geänderten Zeichen am Anfang
+// wieder volle 35,4 s. Die Grenzen müssen sich deshalb nach einer Einfügung
+// wieder auf den unveränderten Text einsynchronisieren.
+describe("splitIntoChunks Positionsstabilität", () => {
+  function corpus(paragraphs: number): string {
+    const out: string[] = [];
+    for (let i = 0; i < paragraphs; i++) {
+      // Bewusst unterschiedlich lange Absätze — gleichmäßige Absätze würden
+      // sich auch beim greedy Packen zufällig wieder einsynchronisieren.
+      const words = 12 + ((i * 7) % 40);
+      out.push(`Absatz ${i}: ` + `Wort${i} `.repeat(words).trim() + ".");
+    }
+    return out.join("\n\n");
+  }
+
+  it("behält nach einer Einfügung am Anfang die meisten Chunk-Grenzen bei", () => {
+    const text = corpus(300);
+    const before = splitIntoChunks(text);
+    const after = splitIntoChunks("Aktuelle Uhrzeit: 18:35:07.\n\n" + text);
+
+    const afterSet = new Set(after);
+    const survivors = before.filter((c) => afterSet.has(c)).length;
+    const ratio = survivors / before.length;
+
+    expect(before.length).toBeGreaterThan(10);
+    expect(ratio).toBeGreaterThan(0.8);
+  });
+
+  it("schneidet weiterhin nur Chunks bis maxChars", () => {
+    for (const chunk of splitIntoChunks(corpus(300))) {
+      expect(chunk.length).toBeLessThanOrEqual(MAX_CHUNK_CHARS);
+    }
+  });
+
+  it("bleibt verlustfrei — die Chunks ergeben zusammengesetzt den Originaltext", () => {
+    const text = corpus(300);
+    expect(splitIntoChunks(text).join("")).toBe(text);
+  });
+});

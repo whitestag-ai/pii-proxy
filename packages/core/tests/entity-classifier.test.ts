@@ -256,3 +256,47 @@ describe("classifyEntities", () => {
     expect(t.calls()).toEqual(["rtx-qat"]);
   });
 });
+
+// --- Part 4: reasoning_effort (Durchsatz) ---
+//
+// Der Klassifikator ist ein reiner Entitäten-Extraktor und braucht kein
+// Chain-of-Thought. Gemessen auf gemma-4-12b-qat: 1920 reasoning-Tokens und
+// 37,3 s pro 4000-Zeichen-Chunk mit Reasoning gegen 0 Tokens und 13,7 s ohne —
+// bei identischem Ergebnis. Bei ~59 Chunks pro Agenten-Prompt entscheidet das
+// darüber, ob die Anfrage im Client-Timeout bleibt.
+describe("classifyEntities reasoning_effort", () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  function captureRequestBody(): { get: () => Record<string, unknown> } {
+    let captured: Record<string, unknown> = {};
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      captured = JSON.parse(String((init as RequestInit).body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"findings":[]}' } }] }),
+        { status: 200 },
+      );
+    });
+    return { get: () => captured };
+  }
+
+  it("schickt reasoning_effort mit, wenn es konfiguriert ist", async () => {
+    const body = captureRequestBody();
+    await classifyEntities("text", {
+      url: "http://localhost:1234",
+      model: "gemma-4-12b-qat",
+      timeoutMs: 1000,
+      reasoningEffort: "none",
+    });
+    expect(body.get().reasoning_effort).toBe("none");
+  });
+
+  it("lässt reasoning_effort weg, wenn es nicht konfiguriert ist", async () => {
+    const body = captureRequestBody();
+    await classifyEntities("text", {
+      url: "http://localhost:1234",
+      model: "gemma-4-12b-qat",
+      timeoutMs: 1000,
+    });
+    expect(body.get()).not.toHaveProperty("reasoning_effort");
+  });
+});

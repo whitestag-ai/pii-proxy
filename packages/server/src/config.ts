@@ -16,6 +16,9 @@ const Schema = z.object({
   PII_PROXY_CLASSIFIER_TIMEOUT_MS: z.coerce.number().default(30000),
   PII_PROXY_CLASSIFIER_RETRIES: z.coerce.number().default(2),
   PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS: z.coerce.number().default(1500),
+  PII_PROXY_CLASSIFIER_REASONING_EFFORT: z
+    .enum(["none", "low", "medium", "high"])
+    .default("none"),
   // Persistenter, verschlüsselter Chunk-Findings-Cache. Leerer String schaltet
   // ihn ab (reiner In-Memory-Cache). Default: neben der Mapping-DB.
   PII_PROXY_CHUNK_CACHE_DB: z.string().optional(),
@@ -30,7 +33,7 @@ export interface ServiceConfig {
   sharedKey: string;
   mappingDbPath: string;
   auditDir: string;
-  classifier: { url: string; model: string; fallbackModel?: string; timeoutMs: number; retries: number; retryBackoffMs: number };
+  classifier: { url: string; model: string; fallbackModel?: string; timeoutMs: number; retries: number; retryBackoffMs: number; reasoningEffort: "none" | "low" | "medium" | "high" };
   /** Pfad zur persistenten Chunk-Cache-DB, oder undefined (deaktiviert). */
   chunkCacheDbPath?: string;
   chunkCacheTtlSeconds: number;
@@ -61,6 +64,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string | unde
       timeoutMs: parsed.PII_PROXY_CLASSIFIER_TIMEOUT_MS,
       retries: parsed.PII_PROXY_CLASSIFIER_RETRIES,
       retryBackoffMs: parsed.PII_PROXY_CLASSIFIER_RETRY_BACKOFF_MS,
+      reasoningEffort: parsed.PII_PROXY_CLASSIFIER_REASONING_EFFORT,
     },
     chunkCacheDbPath,
     chunkCacheTtlSeconds: parsed.PII_PROXY_CHUNK_CACHE_TTL_SECONDS,
