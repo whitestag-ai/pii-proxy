@@ -26,7 +26,7 @@ export const CACHE_TTL_MS = 60 * 60 * 1000;
 /** Maximale Anzahl Cache-Einträge (LRU-Eviction). */
 export const CACHE_MAX_ENTRIES = 512;
 
-export type ChunkClassifier = (chunk: string) => Promise<Finding[]>;
+export type ChunkClassifier = (chunk: string, signal?: AbortSignal) => Promise<Finding[]>;
 
 /**
  * Persistente L2 hinter der In-Memory-L1. Synchron (better-sqlite3-artig),
@@ -268,6 +268,7 @@ export async function classifyEntitiesChunked(
   text: string,
   classify: ChunkClassifier,
   cache: ChunkClassifierCache,
+  signal?: AbortSignal,
 ): Promise<Finding[]> {
   const chunks = splitIntoChunks(text);
 
@@ -282,10 +283,14 @@ export async function classifyEntitiesChunked(
   const rank: Record<Finding["confidence"], number> = { low: 0, medium: 1, high: 2 };
 
   for (const chunk of chunks) {
+    // Client weg (Verbindung geschlossen / Timeout) → keine weiteren Chunks
+    // klassifizieren. Verhindert, dass sich Retry-Läufe zu parallelen
+    // verwaisten Klassifikationen auf derselben GPU stapeln.
+    signal?.throwIfAborted();
     const hash = hashChunk(chunk);
     let findings = cache.get(hash);
     if (findings === undefined) {
-      findings = await classify(chunk);
+      findings = await classify(chunk, signal);
       cache.set(hash, findings);
     }
     for (const f of findings) {

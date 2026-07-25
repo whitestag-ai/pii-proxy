@@ -37,6 +37,13 @@ export interface AnonymizeRequest {
   targetLlm: string;
   agent: string;
   tenantId?: string;
+  /**
+   * Optionales Abbruch-Signal. Bricht es ab (z. B. weil der HTTP-Client die
+   * Verbindung geschlossen hat), stoppt die Chunk-Klassifikation sofort —
+   * verhindert, dass Retry-Läufe sich zu parallelen verwaisten Klassifikationen
+   * auf derselben GPU stapeln.
+   */
+  signal?: AbortSignal;
 }
 
 export interface AnonymizeResult {

@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerAuth } from "../../src/auth.js";
 import { registerAnthropicPassthroughRoute } from "../../src/routes/anthropic-passthrough.js";
+import { abortSignalOnClientClose } from "../../src/routes/client-abort.js";
 import type { PiiProxy } from "@whitestag/pii-proxy-core";
 
 const KEY = "test-key-32-bytes-xxxxxxxxxxxxxxx";
@@ -381,5 +382,53 @@ describe("POST /anthropic/v1/messages — non-streaming", () => {
         (fetchFn.mock.calls[0]![1].headers as Record<string, string>)["anthropic-version"],
       ).toBe("2024-10-22");
     });
+  });
+});
+
+describe("Abort bei Client-Disconnect", () => {
+  it("übergibt anonymize ein AbortSignal", async () => {
+    const piiProxy = mkPiiProxy();
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "m", type: "message", role: "assistant", content: [{ type: "text", text: "ok" }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+    await app.ready();
+
+    await app.inject({
+      method: "POST",
+      url: "/anthropic/v1/messages",
+      headers: { "x-api-key": "sk-ant-xxx", "content-type": "application/json" },
+      payload: { model: "claude-sonnet-4-6", max_tokens: 10, messages: [{ role: "user", content: "Hallo Max Mustermann" }] },
+    });
+
+    const call = (piiProxy.anonymize as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(call.signal).toBeInstanceOf(AbortSignal);
+    await app.close();
+  });
+
+  it("bricht ab, wenn die Verbindung VOR dem Antwort-Ende schließt (echter Disconnect)", async () => {
+    const { EventEmitter } = await import("node:events");
+    // raw = ServerResponse; writableEnded=false → Antwort noch nicht gesendet.
+    const raw = Object.assign(new EventEmitter(), { writableEnded: false });
+    const signal = abortSignalOnClientClose({ raw } as never);
+    expect(signal.aborted).toBe(false);
+    raw.emit("close");
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("bricht NICHT ab, wenn die Antwort normal beendet wurde (close nach writableEnded)", async () => {
+    const { EventEmitter } = await import("node:events");
+    // 'close' feuert auch beim regulären Ende der Response. Das darf das Signal
+    // NICHT abbrechen — sonst würde jede fertige Anfrage fälschlich als Abbruch
+    // gewertet (der Bug, der classifier_unavailable auslöste).
+    const raw = Object.assign(new EventEmitter(), { writableEnded: true });
+    const signal = abortSignalOnClientClose({ raw } as never);
+    raw.emit("close");
+    expect(signal.aborted).toBe(false);
   });
 });

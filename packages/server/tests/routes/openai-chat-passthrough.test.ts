@@ -384,3 +384,30 @@ describe("POST /openai/v1/chat/completions — non-streaming", () => {
     expect(sent.messages[2].content).toBe("[PERSON_A] fragte nach X.");
   });
 });
+
+describe("OpenAI-Passthrough Abort bei Client-Disconnect", () => {
+  it("übergibt anonymize ein AbortSignal", async () => {
+    const piiProxy = mkPiiProxy();
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ id: "c", object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerOpenaiChatPassthroughRoute(app, { piiProxy, fetchFn });
+    await app.ready();
+
+    await app.inject({
+      method: "POST",
+      url: "/openai/v1/chat/completions",
+      headers: { authorization: "Bearer sk-xxx", "content-type": "application/json" },
+      payload: { model: "gpt-4o", messages: [{ role: "user", content: "Hallo Max Mustermann" }] },
+    });
+
+    const call = (piiProxy.anonymize as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(call.signal).toBeInstanceOf(AbortSignal);
+    await app.close();
+  });
+});

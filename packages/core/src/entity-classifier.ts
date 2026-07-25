@@ -60,6 +60,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export async function classifyEntities(
   text: string,
   cfg: ClassifierConfig,
+  signal?: AbortSignal,
 ): Promise<Finding[]> {
   // Modell-Reihenfolge: Primär, dann (falls gesetzt) Fallback. Scheitert das
   // Primärmodell mit ClassifierUnavailableError — inkl. „Modell nicht geladen"
@@ -72,7 +73,7 @@ export async function classifyEntities(
   let lastErr: unknown;
   for (const model of models) {
     try {
-      return await classifyWithRetries(text, cfg, model);
+      return await classifyWithRetries(text, cfg, model, signal);
     } catch (err) {
       lastErr = err;
       if (!(err instanceof ClassifierUnavailableError)) throw err;
@@ -87,13 +88,14 @@ async function classifyWithRetries(
   text: string,
   cfg: ClassifierConfig,
   model: string,
+  signal?: AbortSignal,
 ): Promise<Finding[]> {
   const maxRetries = Math.max(0, cfg.retries ?? 0);
   const backoffMs = cfg.retryBackoffMs ?? 1500;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await attemptClassify(text, cfg, model);
+      return await attemptClassify(text, cfg, model, signal);
     } catch (err) {
       lastErr = err;
       const retryable = err instanceof ClassifierUnavailableError && err.retryable;
@@ -108,7 +110,14 @@ async function attemptClassify(
   text: string,
   cfg: ClassifierConfig,
   model: string,
+  signal?: AbortSignal,
 ): Promise<Finding[]> {
+  // Timeout und (falls vorhanden) das externe Client-Signal kombinieren: der
+  // fetch bricht ab, sobald EINES von beiden feuert. So endet ein gerade
+  // laufender Chunk-Request sofort, wenn der Client die Verbindung schließt,
+  // statt bis zum Timeout weiterzurechnen.
+  const timeoutSignal = AbortSignal.timeout(cfg.timeoutMs);
+  const fetchSignal = signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal;
   let response: Response;
   try {
     response = await fetch(`${cfg.url}/v1/chat/completions`, {
@@ -156,7 +165,7 @@ async function attemptClassify(
           },
         },
       }),
-      signal: AbortSignal.timeout(cfg.timeoutMs),
+      signal: fetchSignal,
     });
   } catch (err) {
     // Netzwerkfehler & Timeout (AbortError) sind transient -> retrybar.

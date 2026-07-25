@@ -201,3 +201,25 @@ describe("createPiiProxy().anonymize", () => {
     proxy.close();
   });
 });
+
+describe("createPiiProxy().anonymize Abort", () => {
+  it("bricht ab und klassifiziert nicht, wenn das Signal schon abgebrochen ist", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: '{"findings":[]}' } }] }), { status: 200 }),
+    );
+    const proxy = createPiiProxy({
+      mappingDbPath: join(dir, "m.db"),
+      mappingKey: randomBytes(32),
+      auditDir: join(dir, "audit"),
+      classifier: { url: "http://x", model: "g", timeoutMs: 1000 },
+    });
+    const ctrl = new AbortController();
+    ctrl.abort();
+
+    await expect(
+      proxy.anonymize({ text: "Max Mustermann war hier", targetLlm: "claude", agent: "ceo", signal: ctrl.signal }),
+    ).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    proxy.close();
+  });
+});

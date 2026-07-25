@@ -302,3 +302,60 @@ describe("splitIntoChunks Positionsstabilität", () => {
     expect(splitIntoChunks(text).join("")).toBe(text);
   });
 });
+
+// --- Abort-Propagation (verwaiste Klassifikationen vermeiden) ---
+//
+// Schließt der Client die Verbindung (Claude-CLI bricht nach 600 s ab), läuft
+// die Chunk-Klassifikation im Proxy sonst weiter. Retry 2 startet dann eine
+// ZWEITE parallele Klassifikation desselben Prompts, Retry 10 die zehnte —
+// alle teilen sich eine GPU und verhindern die Konvergenz. So kippte der Proxy
+// am 2026-07-24 (119 verwaiste Requests). Ein durchgereichtes AbortSignal muss
+// die Chunk-Schleife stoppen, sobald der Client weg ist.
+describe("classifyEntitiesChunked Abort-Propagation", () => {
+  function corpus(paragraphs: number): string {
+    const out: string[] = [];
+    for (let i = 0; i < paragraphs; i++) {
+      out.push(`Absatz ${i}: ` + `Wort${i} `.repeat(400).trim() + ".");
+    }
+    return out.join("\n\n");
+  }
+
+  it("klassifiziert keinen einzigen Chunk, wenn das Signal schon abgebrochen ist", async () => {
+    const cache = new ChunkClassifierCache({});
+    const clf = makeCountingClassifier([]);
+    const ctrl = new AbortController();
+    ctrl.abort();
+
+    await expect(
+      classifyEntitiesChunked(corpus(10), clf.fn, cache, ctrl.signal),
+    ).rejects.toThrow();
+    expect(clf.calls()).toBe(0);
+  });
+
+  it("stoppt die Schleife mitten drin, sobald das Signal abbricht", async () => {
+    const cache = new ChunkClassifierCache({});
+    const ctrl = new AbortController();
+    let calls = 0;
+    // Klassifikator bricht die Verbindung nach dem 2. Chunk ab — modelliert den
+    // Client-Disconnect während der Verarbeitung.
+    const fn: ChunkClassifier = async () => {
+      calls += 1;
+      if (calls === 2) ctrl.abort();
+      return [];
+    };
+
+    await expect(
+      classifyEntitiesChunked(corpus(20), fn, cache, ctrl.signal),
+    ).rejects.toThrow();
+    // Nach dem Abbruch dürfen die restlichen ~18 Chunks nicht mehr laufen.
+    expect(calls).toBeLessThan(20);
+  });
+
+  it("läuft normal durch, wenn kein Signal übergeben wird", async () => {
+    const cache = new ChunkClassifierCache({});
+    const clf = makeCountingClassifier([]);
+    const chunks = splitIntoChunks(corpus(20)).length;
+    await classifyEntitiesChunked(corpus(20), clf.fn, cache);
+    expect(clf.calls()).toBe(chunks);
+  });
+});

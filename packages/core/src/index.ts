@@ -89,8 +89,9 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
         // beliebigen Chunk propagiert hier hoch -> fail-closed bleibt erhalten.
         llmFindings = await classifyEntitiesChunked(
           req.text,
-          (chunk) => classifyEntities(chunk, opts.classifier),
+          (chunk, signal) => classifyEntities(chunk, opts.classifier, signal),
           chunkCache,
+          req.signal,
         );
       } catch (err) {
         if (err instanceof ClassifierUnavailableError) {

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { PiiProxy } from "@whitestag/pii-proxy-core";
 import { createAnthropicSseDeanonymizer } from "../streaming/anthropic-sse-deanonymizer.js";
+import { abortSignalOnClientClose } from "./client-abort.js";
 
 const ANTHROPIC_UPSTREAM_DEFAULT = "https://api.anthropic.com/v1/messages";
 
@@ -208,6 +209,7 @@ export function registerAnthropicPassthroughRoute(
         targetLlm: body.model,
         agent: "anthropic-passthrough",
         tenantId: opts.tenantId,
+        signal: abortSignalOnClientClose(reply),
       });
       if ("blocked" in anon) {
         return reply.code(400).send({

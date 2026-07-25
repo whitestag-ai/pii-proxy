@@ -3,6 +3,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { PiiProxy } from "@whitestag/pii-proxy-core";
 import { createOpenaiSseDeanonymizer } from "../streaming/openai-sse-deanonymizer.js";
+import { abortSignalOnClientClose } from "./client-abort.js";
 
 const OPENAI_UPSTREAM_DEFAULT = "https://api.openai.com/v1/chat/completions";
 
@@ -198,6 +199,7 @@ export function registerOpenaiChatPassthroughRoute(
         targetLlm: body.model,
         agent: "openai-chat-passthrough",
         tenantId: opts.tenantId,
+        signal: abortSignalOnClientClose(reply),
       });
       if ("blocked" in anon) {
         return reply.code(400).send({

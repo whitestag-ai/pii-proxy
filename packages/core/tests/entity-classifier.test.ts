@@ -300,3 +300,39 @@ describe("classifyEntities reasoning_effort", () => {
     expect(body.get()).not.toHaveProperty("reasoning_effort");
   });
 });
+
+// --- Part 5: Abort-Signal an fetch durchreichen ---
+//
+// Der zwischen-Chunk-Abbruch (classifier-chunk-cache) verhindert das Stapeln.
+// Ergänzend soll auch ein GERADE laufender Chunk-Request abbrechen, sobald der
+// Client weg ist — sonst läuft der aktuelle fetch noch bis zum Timeout weiter.
+describe("classifyEntities Abort-Signal", () => {
+  beforeEach(() => { vi.restoreAllMocks(); });
+
+  it("bricht fetch ab, wenn das externe Signal abbricht", async () => {
+    let seenSignal: AbortSignal | undefined;
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      seenSignal = (init as RequestInit).signal ?? undefined;
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"findings":[]}' } }] }), { status: 200 });
+    });
+
+    const ctrl = new AbortController();
+    await classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 10000 }, ctrl.signal);
+
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+    expect(seenSignal!.aborted).toBe(false);
+    ctrl.abort();
+    // Das an fetch übergebene (kombinierte) Signal folgt dem externen Abbruch.
+    expect(seenSignal!.aborted).toBe(true);
+  });
+
+  it("timeoutet weiterhin ohne externes Signal", async () => {
+    let seenSignal: AbortSignal | undefined;
+    vi.spyOn(global, "fetch").mockImplementation(async (_url, init) => {
+      seenSignal = (init as RequestInit).signal ?? undefined;
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"findings":[]}' } }] }), { status: 200 });
+    });
+    await classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 10000 });
+    expect(seenSignal).toBeInstanceOf(AbortSignal);
+  });
+});
