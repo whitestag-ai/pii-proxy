@@ -170,6 +170,50 @@ describe("classifyEntities", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3); // 1 Versuch + 2 Retries
   });
 
+  // Gemma 4 und qwen3.6 liefern gelegentlich eine komplett leere Antwort —
+  // `content` UND `reasoning_content` leer, dabei `finish_reason: "stop"`.
+  // Gemessen am 2026-08-22 auf `gemma-4-12b-qat`: 783 von 3787 Antworten
+  // (20,7 %). Das ist kein Formatfehler, sondern Sampling; ein zweiter Versuch
+  // liefert in aller Regel ein Ergebnis. Muss deshalb retrybar sein, statt
+  // sofort auf das (langsamere) Fallback-Modell auszuweichen.
+  function emptyResponse(): Response {
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { role: "assistant", content: "", reasoning_content: "" } }],
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("wiederholt bei komplett leerer Modellantwort", async () => {
+    const fetchMock = vi
+      .spyOn(global, "fetch")
+      .mockResolvedValueOnce(emptyResponse())
+      .mockResolvedValueOnce(okFindingsResponse());
+    const findings = await classifyEntities("Anna Müller war da", {
+      url: "http://localhost:1234", model: "gemma-4-12b-qat", timeoutMs: 100,
+      retries: 1, retryBackoffMs: 0,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ type: "PERSON", value: "Anna Müller" });
+  });
+
+  it("wiederholt NICHT bei unparsebarer, aber nicht-leerer Antwort", async () => {
+    const fetchMock = vi.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { role: "assistant", content: "nur prosa, kein json" } }],
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(
+      classifyEntities("text", { url: "http://localhost:1234", model: "x", timeoutMs: 100, retries: 3, retryBackoffMs: 0 }),
+    ).rejects.toThrow("classifier_unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(1); // unparsebar = kein Retry
+  });
+
   // --- Part 4: Fallback-Modell (Nacht / RTX-Classifier-Ausfall) ---
 
   // Routet fetch anhand des `model` im Request-Body: pro Modell entweder eine

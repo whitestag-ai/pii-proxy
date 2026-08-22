@@ -188,6 +188,16 @@ async function attemptClassify(
   // Reasoning-Feld zurückfallen und das JSON tolerant extrahieren.
   const rawText = content.trim().length > 0 ? content : (message?.reasoning_content ?? "");
 
+  // Eine komplett leere Antwort — beide Felder leer, dabei `finish_reason:
+  // "stop"` — ist kein Formatfehler, sondern Sampling-Verhalten der lokalen
+  // Modelle. Gemessen am 2026-08-22 auf `gemma-4-12b-qat`: 783 von 3787
+  // Antworten (20,7 %). Ein zweiter Versuch liefert in aller Regel ein
+  // Ergebnis, deshalb retrybar — sonst weicht jede fünfte Klassifizierung
+  // sofort auf das langsamere Fallback-Modell aus.
+  if (rawText.trim().length === 0) {
+    throw new ClassifierUnavailableError("empty_response", true);
+  }
+
   const parsed = parseClassifierResponse(rawText);
   if (parsed === null) {
     throw new ClassifierUnavailableError("invalid_json");
