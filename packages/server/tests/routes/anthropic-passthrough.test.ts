@@ -432,3 +432,95 @@ describe("Abort bei Client-Disconnect", () => {
     expect(signal.aborted).toBe(false);
   });
 });
+
+describe("Trenner zwischen den Nachrichten (Chunk-Cache-Wirksamkeit)", () => {
+  /**
+   * Der Klassifikator-Text entsteht als `originals.join(boundary)` und wird
+   * danach in ≤4000-Zeichen-Chunks geschnitten, die per sha256 gecacht werden.
+   * Ein PRO REQUEST NEU GEWUERFELTER Trenner aendert jeden Chunk, der eine
+   * Nachrichtengrenze enthaelt — gemessen am 2026-09-12 rund die HAELFTE aller
+   * Chunks, unabhaengig von der Promptgroesse. Folge: Cache-Miss, Dutzende
+   * serielle Classifier-Aufrufe (Proxy-Log: Mittel 63,2 s, Max 710,9 s), der
+   * Client bricht ab und fail-closed macht daraus `classifier_unavailable`.
+   * Deshalb MUSS derselbe Inhalt denselben Klassifikator-Text ergeben.
+   */
+  function captureProxy(seen: string[]): PiiProxy {
+    return mkPiiProxy({
+      anonymize: vi.fn().mockImplementation(async (req: { text: string }) => {
+        seen.push(req.text);
+        return { mappingId: "m-1", anonymizedText: req.text, findings: [], warnings: [] };
+      }),
+    } as Partial<PiiProxy>);
+  }
+
+  const upstream = () =>
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "msg_1", type: "message", role: "assistant",
+          content: [{ type: "text", text: "ok" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+  const payload = (extra = "") => ({
+    model: "claude-sonnet-4-6",
+    max_tokens: 10,
+    system: "Statischer System-Prompt, bei jedem Aufruf identisch." + extra,
+    messages: [
+      { role: "user", content: "Erste Nachricht." },
+      { role: "assistant", content: "Zweite Nachricht." },
+      { role: "user", content: "Dritte Nachricht." },
+    ],
+  });
+
+  it("erzeugt fuer identische Anfragen denselben Klassifikator-Text", async () => {
+    const seen: string[] = [];
+    const app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy: captureProxy(seen), fetchFn: upstream() });
+    await app.ready();
+
+    for (let i = 0; i < 2; i++) {
+      await app.inject({
+        method: "POST", url: "/anthropic/v1/messages",
+        headers: { "x-api-key": "sk-ant-xxx", "content-type": "application/json" },
+        payload: payload(),
+      });
+    }
+    await app.close();
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).toBe(seen[1]);
+  });
+
+  it("weicht auf einen anderen Trenner aus, wenn der feste im Nutztext vorkommt", async () => {
+    // Sicherheitseigenschaft von ensureBoundaryAbsent: der Trenner darf nie im
+    // Nutztext stehen, sonst wuerde der Text an falscher Stelle zerlegt.
+    const seen: string[] = [];
+    const app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy: captureProxy(seen), fetchFn: upstream() });
+    await app.ready();
+
+    await app.inject({
+      method: "POST", url: "/anthropic/v1/messages",
+      headers: { "x-api-key": "sk-ant-xxx", "content-type": "application/json" },
+      payload: {
+        model: "claude-sonnet-4-6", max_tokens: 10,
+        messages: [
+          { role: "user", content: "Hier steht  ---PII-PROXY-BOUNDARY---  mitten im Text." },
+          { role: "user", content: "Zweite Nachricht." },
+        ],
+      },
+    });
+    await app.close();
+
+    // Der tatsaechlich verwendete Trenner darf nicht der feste sein: sonst gaebe
+    // es im zusammengefuegten Text mehr Trennstellen als Nachrichtengrenzen.
+    const joined = seen[0]!;
+    const occurrences = joined.split(" ---PII-PROXY-BOUNDARY--- ").length - 1;
+    expect(occurrences).toBe(1); // nur das Vorkommen aus dem Nutztext selbst
+  });
+});

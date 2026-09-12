@@ -104,6 +104,27 @@ function isTextBlock(block: unknown): boolean {
   );
 }
 
+/**
+ * Fester Trenner zwischen den Nachrichten — bewusst NICHT zufaellig.
+ *
+ * Der Klassifikator-Text entsteht als `originals.join(boundary)` und wird
+ * danach in ≤4000-Zeichen-Chunks geschnitten, die per sha256 gecacht werden
+ * (siehe classifier-chunk-cache.ts). Ein pro Request neu gewuerfelter Trenner
+ * aendert JEDEN Chunk, der eine Nachrichtengrenze enthaelt — gemessen am
+ * 2026-09-12 rund die HAELFTE aller Chunks, unabhaengig von der Promptgroesse
+ * (10 Runden: 12 von 28 neu; 120 Runden: 122 von 248). Der Cache lief damit
+ * ins Leere: 136.912 Eintraege, davon taeglich tausende neue, und im Mittel
+ * 63,2 s pro Request (Max 710,9 s) statt Sekundenbruchteilen. Der Claude-CLI
+ * gab vorher auf, und fail-closed machte daraus `classifier_unavailable` —
+ * allein bei VP Engineering 641 tote Runs zwischen dem 01.09. und 12.09.
+ *
+ * Die Sicherheitseigenschaft bleibt erhalten: `ensureBoundaryAbsent` prueft
+ * weiterhin, ob der Trenner im Nutztext vorkommt, und weicht dann auf einen
+ * zufaelligen aus. Die Zufaelligkeit war nie fuer die Korrektheit noetig —
+ * genau dafuer ist die Pruefung da — sie hat nur den Cache entwertet.
+ */
+const FIXED_BOUNDARY = " ---PII-PROXY-BOUNDARY--- ";
+
 function buildBoundary(): string {
   return ` ---PII-PROXY-BOUNDARY-${randomUUID()}--- `;
 }
@@ -201,7 +222,7 @@ export function registerAnthropicPassthroughRoute(
         return forwardVerbatim(fetchFn, upstream, buildUpstreamHeaders(req), body, reply);
       }
 
-      const boundary = ensureBoundaryAbsent(buildBoundary(), originals);
+      const boundary = ensureBoundaryAbsent(FIXED_BOUNDARY, originals);
       const joined = originals.join(boundary);
 
       const anon = await opts.piiProxy.anonymize({

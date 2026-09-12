@@ -101,6 +101,16 @@ function isTextPart(part: unknown): boolean {
   );
 }
 
+/**
+ * Fester Trenner zwischen den Nachrichten — bewusst NICHT zufaellig.
+ * Begruendung und Messwerte stehen bei derselben Konstante in
+ * `anthropic-passthrough.ts`: ein pro Request neu gewuerfelter Trenner
+ * entwertet den Chunk-Cache fuer rund die Haelfte aller Chunks.
+ * `ensureBoundaryAbsent` weicht weiterhin aus, wenn der feste Trenner
+ * im Nutztext vorkommt — die Sicherheitseigenschaft bleibt.
+ */
+const FIXED_BOUNDARY = " ---PII-PROXY-BOUNDARY--- ";
+
 function buildBoundary(): string {
   return ` ---PII-PROXY-BOUNDARY-${randomUUID()}--- `;
 }
@@ -191,7 +201,7 @@ export function registerOpenaiChatPassthroughRoute(
         return forwardVerbatim(fetchFn, upstream, buildUpstreamHeaders(req), body, reply);
       }
 
-      const boundary = ensureBoundaryAbsent(buildBoundary(), originals);
+      const boundary = ensureBoundaryAbsent(FIXED_BOUNDARY, originals);
       const joined = originals.join(boundary);
 
       const anon = await opts.piiProxy.anonymize({
