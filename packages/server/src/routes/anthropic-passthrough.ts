@@ -69,7 +69,7 @@ function collectRequestTextRefs(body: z.infer<typeof RequestBody>): TextRef[] {
       });
     } else {
       for (const block of body.system) {
-        if (isTextBlock(block)) {
+        if (isTextBlock(block) && !isClaudeClientPreamble((block as { text: string }).text)) {
           const tb = block as { text: string };
           refs.push({ get: () => tb.text, set: (v) => { tb.text = v; } });
         }
@@ -93,6 +93,31 @@ function collectResponseTextRefs(resp: { content?: unknown }): TextRef[] {
     }
   }
   return refs;
+}
+
+/**
+ * Feste Vorspann-Bloecke des Claude-Clients (CLI / Agent SDK), die NICHT
+ * anonymisiert werden duerfen.
+ *
+ * Abo-Logins (OAuth) akzeptiert Anthropic nur, wenn die Identitaetszeile
+ * unveraendert ankommt. Der Klassifikator markiert "Anthropic" je nach Kontext
+ * als FIRMA — dann geht "built on [FIRMA_A]'s Claude Agent SDK" raus und die
+ * API antwortet mit 429 "Server is temporarily limiting requests (not your
+ * usage limit)". Am 07.10.2026 hing so der n8n-Betriebsingenieur seit dem
+ * 06.10. in einer Dauerschleife: 22 Runs, kein einziger Token.
+ *
+ * Geprueft wird der GANZE Block gegen feste Muster — ein Block, der nur mit
+ * der Identitaetszeile beginnt und danach Nutztext traegt, wird weiter
+ * anonymisiert. Die Bloecke enthalten keine personenbezogenen Daten.
+ */
+const CLAUDE_CLIENT_PREAMBLES: RegExp[] = [
+  /^x-anthropic-billing-header: [^\n]*$/,
+  /^You are Claude Code, Anthropic's official CLI for Claude\.( You are running within the Claude Agent SDK\.)?$/,
+  /^You are a Claude agent, built on Anthropic's Claude Agent SDK\.$/,
+];
+
+function isClaudeClientPreamble(text: string): boolean {
+  return CLAUDE_CLIENT_PREAMBLES.some((re) => re.test(text.trim()));
 }
 
 function isTextBlock(block: unknown): boolean {

@@ -524,3 +524,67 @@ describe("Trenner zwischen den Nachrichten (Chunk-Cache-Wirksamkeit)", () => {
     expect(occurrences).toBe(1); // nur das Vorkommen aus dem Nutztext selbst
   });
 });
+
+describe("POST /anthropic/v1/messages — Claude-Client-Identitaet", () => {
+  let app: FastifyInstance;
+  afterEach(async () => app && (await app.close()));
+
+  // Abo-Logins (OAuth) akzeptiert Anthropic nur mit unveraenderter
+  // Identitaetszeile. Wird "Anthropic" zu [FIRMA_A], antwortet die API mit
+  // 429 "Server is temporarily limiting requests (not your usage limit)".
+  it("laesst Billing-Header und Identitaetszeile unangetastet, anonymisiert den Rest", async () => {
+    const piiProxy = mkPiiProxy({
+      anonymize: vi.fn().mockImplementation(async (req: { text: string }) => ({
+        mappingId: "m-1",
+        anonymizedText: req.text
+          .replace(/Anthropic/g, "[FIRMA_A]")
+          .replace(/Max Mustermann/g, "[PERSON_A]"),
+        findings: [],
+        warnings: [],
+      })),
+    } as Partial<PiiProxy>);
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ content: [{ type: "text", text: "ok" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+    await app.ready();
+
+    const billing = "x-anthropic-billing-header: cc_version=2.1.273.2b9; cc_entrypoint=claude-vscode;";
+    const sdkIdentity = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+    const cliIdentity = "You are Claude Code, Anthropic's official CLI for Claude.";
+    const lookalike = `${sdkIdentity} Kunde: Max Mustermann`;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/anthropic/v1/messages",
+      headers: { authorization: "Bearer oauth-xxx", "content-type": "application/json" },
+      payload: {
+        model: "claude-sonnet-4-6",
+        max_tokens: 50,
+        system: [
+          { type: "text", text: billing },
+          { type: "text", text: sdkIdentity },
+          { type: "text", text: cliIdentity },
+          { type: "text", text: "Anthropic-Agent fuer Max Mustermann." },
+          { type: "text", text: lookalike },
+        ],
+        messages: [{ role: "user", content: "Hallo Max Mustermann" }],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const sent = JSON.parse(fetchFn.mock.calls[0]![1].body as string);
+    expect(sent.system[0].text).toBe(billing);
+    expect(sent.system[1].text).toBe(sdkIdentity);
+    expect(sent.system[2].text).toBe(cliIdentity);
+    expect(sent.system[3].text).toBe("[FIRMA_A]-Agent fuer [PERSON_A].");
+    expect(sent.system[4].text).toContain("[PERSON_A]");
+    expect(sent.messages[0].content).toBe("Hallo [PERSON_A]");
+  });
+});
