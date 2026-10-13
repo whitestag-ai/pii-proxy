@@ -1,5 +1,12 @@
 # @whitestag/pii-proxy-server
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [c6b02f0]
+  - @whitestag/pii-proxy-core@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes
