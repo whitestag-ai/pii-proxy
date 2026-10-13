@@ -1,5 +1,48 @@
 # @whitestag/pii-proxy-core
 
+## 0.5.0
+
+### Minor Changes
+
+- 5605310: feat(core): chunked + cached PII classification and reasoning_content fallback
+
+  The accurate LLM classifier (gemma) timed out on full agent prompts in a single
+  call, so the proxy failed closed and blocked every real run. The classification
+  path is now structural:
+
+  - **Chunked classification (`classifier-chunk-cache.ts`):** the LLM-classifier
+    input is split on safe boundaries (paragraph > line > sentence,
+    `MAX_CHUNK_CHARS = 4000`), each chunk is classified separately, and findings
+    are cached per `sha256` chunk hash (TTL 1h, LRU max 512). The identical static
+    system/skills prefix is classified once per unique chunk and then served from
+    cache; small dynamic message chunks classify fast. Findings are merged and
+    de-duped by `(type, value)`; each value stays an exact substring of the full
+    input so value-based anonymisation is unchanged.
+  - **`reasoning_content` fallback (`entity-classifier.ts`):** falls back to
+    `message.reasoning_content` when `content` is empty/whitespace (reasoning
+    models such as qwen3), and extracts JSON robustly from prose / thinking-tag
+    wrapping. If neither is parseable, the existing fail-closed
+    `ClassifierUnavailableError` is preserved.
+
+  GDPR behaviour is unchanged: regex detectors still run on the full text, the
+  Art. 9 block threshold (high) is intact, and fail-closed on real classifier
+  errors is preserved (a chunk whose classifier call throws is never cached).
+
+- a893a1c: feat(core): credit-card and API-key/secret regex PII detectors
+
+  Adds two regex detectors and wires them into the default rules so they actually
+  run at request time:
+
+  - **Credit-card detector** (`detectors/creditcard.ts`): matches the common
+    card-number formats and validates the Luhn checksum to cut false positives.
+  - **API-key / secret detector** (`detectors/apikey.ts`): matches common
+    provider key shapes (e.g. `sk-…`, generic high-entropy tokens) so secrets are
+    pseudonymised instead of leaking to the upstream LLM.
+  - **Default-rules wiring** (`pii-proxy-rules.default.yaml`): both detectors are
+    added to the default allowlist. Without this they were defined but never
+    active — credit-card numbers and API keys passed through in plaintext. A
+    `rules-detectors-wired` test now locks the end-to-end rules path.
+
 ## 0.3.0
 
 ### Minor Changes
