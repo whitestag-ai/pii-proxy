@@ -327,3 +327,71 @@ describe("createPiiProxy().anonymize — classifierSegments", () => {
     proxy.close();
   });
 });
+
+describe("createPiiProxy().anonymize — wiederholte Classifier-Treffer", () => {
+  const mk = () =>
+    createPiiProxy({
+      mappingDbPath: join(dir, "m.db"),
+      mappingKey: randomBytes(32),
+      auditDir: join(dir, "audit"),
+      classifier: { url: "http://x", model: "g", timeoutMs: 1000 },
+    });
+  const run = async (text: string, extra: Record<string, unknown> = {}) => {
+    const proxy = mk();
+    const result = await proxy.anonymize({ text, targetLlm: "c", agent: "a", ...extra });
+    proxy.close();
+    if ("blocked" in result) throw new Error("unexpected block");
+    return result.anonymizedText;
+  };
+
+  it("ersetzt jede Nennung, nicht nur die erste", async () => {
+    mockClassifier([{ type: "PERSON", value: "Max Mustermann", confidence: "high" }]);
+    expect(await run("Max Mustermann und wieder Max Mustermann")).toBe(
+      "[PERSON_A] und wieder [PERSON_A]",
+    );
+  });
+
+  it("ersetzt keine Wortteile", async () => {
+    mockClassifier([{ type: "PERSON", value: "Max", confidence: "high" }]);
+    expect(await run("Max nennt das Maximum, nicht Max.")).toBe(
+      "[PERSON_A] nennt das Maximum, nicht [PERSON_A].",
+    );
+  });
+
+  it("gibt dem längeren Treffer Vorrang", async () => {
+    mockClassifier([
+      { type: "PERSON", value: "Max", confidence: "high" },
+      { type: "PERSON", value: "Max Mustermann", confidence: "high" },
+    ]);
+    const out = await run("Max Mustermann sagt Max Mustermann");
+    expect(out).not.toContain("Mustermann");
+    expect(out.match(/\[PERSON_[A-Z]+\]/g)).toHaveLength(2);
+  });
+
+  const SEP = " ---T--- ";
+  const mitWerkzeug = (auftrag: string, werkzeug: string) => {
+    const text = `${auftrag}${SEP}${werkzeug}`;
+    return {
+      text,
+      extra: {
+        classifierSegments: [{ start: 0, end: auftrag.length }],
+        classifierSeparator: SEP,
+      },
+    };
+  };
+
+  it("überträgt Vor- und Nachnamen in Werkzeug-Text, damit das Modell sie zuordnen kann", async () => {
+    mockClassifier([{ type: "PERSON", value: "Erika Beispielfrau", confidence: "high" }]);
+    const { text, extra } = mitWerkzeug("Suche Erika Beispielfrau", "Erika Beispielfrau;Berlin");
+    expect((await run(text, extra)).split(SEP)).toEqual(["Suche [PERSON_A]", "[PERSON_A];Berlin"]);
+  });
+
+  it("überträgt einzelne Wörter und andere Typen nicht in Werkzeug-Text", async () => {
+    mockClassifier([
+      { type: "PERSON", value: "Max", confidence: "high" },
+      { type: "FIRMA", value: "Acme Holding", confidence: "high" },
+    ]);
+    const { text, extra } = mitWerkzeug("Max von Acme Holding", "const Max = 'Acme Holding';");
+    expect((await run(text, extra)).split(SEP)[1]).toBe("const Max = 'Acme Holding';");
+  });
+});

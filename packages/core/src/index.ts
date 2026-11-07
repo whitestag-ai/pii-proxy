@@ -124,6 +124,61 @@ function detectRegexFindings(req: AnonymizeRequest, ruleDetectors: DetectorKey[]
   return out;
 }
 
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+function allOccurrences(text: string, value: string, from: number, to: number): number[] {
+  const out: number[] = [];
+  for (
+    let at = text.indexOf(value, from);
+    at >= 0 && at + value.length <= to;
+    at = text.indexOf(value, at + 1)
+  ) {
+    const before = text[at - 1];
+    const after = text[at + value.length];
+    if (before && WORD_CHAR.test(before)) continue;
+    if (after && WORD_CHAR.test(after)) continue;
+    out.push(at);
+  }
+  return out;
+}
+
+/**
+ * Der Classifier nennt jeden Wert nur einmal und nur mit der ersten Fundstelle. Ohne
+ * diese Ausweitung gingen alle weiteren Nennungen im Klartext hinaus.
+ *
+ * Werkzeug-Text enthaelt Code und Pfade, in denen ein einzelnes Wort leicht zufaellig
+ * passt. Dorthin wandern deshalb nur Vor- und Nachnamen: Sie muessen ersetzt werden,
+ * weil das Modell den Platzhalter aus dem Auftrag sonst nicht mit der Datei verbinden kann.
+ * Laengere Werte stehen vorn, damit "Max Mustermann" vor "Max" zum Zug kommt.
+ */
+function expandClassifierFindings(req: AnonymizeRequest, findings: Finding[]): Finding[] {
+  const byValue = new Map<string, Finding>();
+  for (const f of findings) byValue.set(`${f.type}::${f.value}`, f);
+  const out = [...findings];
+  const known = new Set(findings.map((f) => `${f.start}:${f.end}`));
+  const add = (f: Finding, start: number): void => {
+    const key = `${start}:${start + f.value.length}`;
+    if (known.has(key)) return;
+    known.add(key);
+    out.push({ ...f, start, end: start + f.value.length });
+  };
+  for (const f of byValue.values()) {
+    const intoToolText = f.type === "PERSON" && /\s/.test(f.value.trim());
+    let pos = 0;
+    for (const s of segmentsOf(req)) {
+      if (intoToolText) {
+        for (const at of allOccurrences(req.text, f.value, pos, s.start)) add(f, at);
+      }
+      for (const at of allOccurrences(req.text, f.value, s.start, s.end)) add(f, at);
+      pos = s.end;
+    }
+    if (intoToolText) {
+      for (const at of allOccurrences(req.text, f.value, pos, req.text.length)) add(f, at);
+    }
+  }
+  return out.sort((a, b) => b.value.length - a.value.length || a.start - b.start);
+}
+
 export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
   const rules = opts.rules ?? loadDefaultRules();
   const store = new MappingStore({ path: opts.mappingDbPath, key: opts.mappingKey });
@@ -193,14 +248,17 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
       }
 
       const piiFindings = detectRegexFindings(req, rules.detect.pii as DetectorKey[]);
-      const all = [...piiFindings, ...llmFindings];
 
       // Regex-Treffer werden immer anonymisiert (deterministisch, definitorisch sensibel).
       // Confidence-Schwelle gilt nur für LLM-Findings.
       const anonRank = CONF_RANK[rules.confidenceThreshold.anonymize];
-      const filtered = all.filter(
-        (f) => f.source === "regex" || CONF_RANK[f.confidence] >= anonRank,
-      );
+      const filtered = [
+        ...piiFindings,
+        ...expandClassifierFindings(
+          req,
+          llmFindings.filter((f) => CONF_RANK[f.confidence] >= anonRank),
+        ),
+      ];
 
       const { text: anonText, mappings } = anonymizeText(req.text, withoutOverlaps(filtered));
       const mappingId = randomUUID();
