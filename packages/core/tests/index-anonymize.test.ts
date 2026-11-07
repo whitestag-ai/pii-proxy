@@ -223,3 +223,107 @@ describe("createPiiProxy().anonymize Abort", () => {
     proxy.close();
   });
 });
+
+describe("createPiiProxy().anonymize — classifierSegments", () => {
+  const mk = () =>
+    createPiiProxy({
+      mappingDbPath: join(dir, "m.db"),
+      mappingKey: randomBytes(32),
+      auditDir: join(dir, "audit"),
+      classifier: { url: "http://x", model: "g", timeoutMs: 1000 },
+    });
+  const SEP = " ---T--- ";
+  const part1 = "Max Mustermann schreibt";
+  const part2 = "Ausgabe von erika@example.org, Nummer 0171-1234567, PASS=geheim-123, PLZ 03046";
+  const part3 = "Max Mustermann antwortet an tom@example.org";
+  const text = [part1, part2, part3].join(SEP);
+  const segments = [
+    { start: 0, end: part1.length },
+    { start: text.length - part3.length, end: text.length },
+  ];
+
+  it("klassifiziert nur die Segmente und setzt Treffer an die richtige Stelle", async () => {
+    mockClassifier([{ type: "PERSON", value: "Max Mustermann", confidence: "high" }]);
+    const proxy = mk();
+    const result = await proxy.anonymize({
+      text,
+      targetLlm: "c",
+      agent: "a",
+      classifierSegments: segments,
+      classifierSeparator: SEP,
+    });
+    if ("blocked" in result) throw new Error("unexpected block");
+
+    const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
+    const gesendet = fetchMock.mock.calls.map((c) => String(c[1]?.body)).join("");
+    expect(gesendet).toContain("Max Mustermann schreibt");
+    expect(gesendet).toContain("antwortet an");
+    expect(gesendet).not.toContain("erika@example.org");
+    expect(gesendet).not.toContain("geheim-123");
+
+    const teile = result.anonymizedText.split(SEP);
+    expect(teile).toHaveLength(3);
+    expect(teile[0]).toBe("[PERSON_A] schreibt");
+    expect(teile[1]).toContain("[EMAIL_A]");
+    expect(teile[1]).toContain("[PHONE_A]");
+    expect(teile[1]).toContain("PASS=[API_KEY_A]");
+    expect(teile[1]).toContain("PLZ 03046");
+    expect(teile[2]).toContain("[EMAIL_B]");
+    proxy.close();
+  });
+
+  it("wendet in Segmenten alle Regeln an, ausserhalb nur die strengen Muster", async () => {
+    mockClassifier([]);
+    const proxy = mk();
+    const s = "https://example.org/x";
+    const result = await proxy.anonymize({
+      text: `${s}${SEP}${s}`,
+      targetLlm: "c",
+      agent: "a",
+      classifierSegments: [{ start: 0, end: s.length }],
+      classifierSeparator: SEP,
+    });
+    if ("blocked" in result) throw new Error("unexpected block");
+    expect(result.anonymizedText).toBe(`[URL_A]${SEP}${s}`);
+    proxy.close();
+  });
+
+  it("ruft den Classifier ohne Segmente gar nicht auf", async () => {
+    mockClassifier([]);
+    const proxy = mk();
+    const result = await proxy.anonymize({
+      text: "x@example.org",
+      targetLlm: "c",
+      agent: "a",
+      classifierSegments: [],
+      classifierSeparator: SEP,
+    });
+    if ("blocked" in result) throw new Error("unexpected block");
+    expect(result.anonymizedText).toBe("[EMAIL_A]");
+    expect(global.fetch).not.toHaveBeenCalled();
+    proxy.close();
+  });
+
+  it("blockiert nicht wegen eines Classifier-Ausfalls, wenn nur Werkzeugtext vorliegt", async () => {
+    vi.spyOn(global, "fetch").mockRejectedValue(new Error("down"));
+    const proxy = mk();
+    const result = await proxy.anonymize({
+      text: "nur Werkzeugtext",
+      targetLlm: "c",
+      agent: "a",
+      classifierSegments: [],
+      classifierSeparator: SEP,
+    });
+    expect("blocked" in result).toBe(false);
+    proxy.close();
+  });
+
+  it("behaelt bei ueberlappenden Treffern den Regex-Treffer und laesst den Text heil", async () => {
+    mockClassifier([{ type: "GESCHAEFTSGEHEIMNIS", value: "geheim-123", confidence: "high" }]);
+    const proxy = mk();
+    const result = await proxy.anonymize({ text: "PASS=geheim-123 Rest", targetLlm: "c", agent: "a" });
+    if ("blocked" in result) throw new Error("unexpected block");
+    expect(result.anonymizedText).toBe("PASS=[API_KEY_A] Rest");
+    proxy.close();
+  });
+});

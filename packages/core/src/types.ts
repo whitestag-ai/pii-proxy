@@ -44,6 +44,13 @@ export interface AnonymizeRequest {
    * auf derselben GPU stapeln.
    */
   signal?: AbortSignal;
+  /**
+   * Bereiche von `text`, die der Classifier sehen soll, per `classifierSeparator`
+   * verbunden. Alles ausserhalb laeuft nur durch `REGEX_ONLY_DETECTORS`. Ohne
+   * Angabe gilt der ganze Text als ein Bereich.
+   */
+  classifierSegments?: Array<{ start: number; end: number }>;
+  classifierSeparator?: string;
 }
 
 export interface AnonymizeResult {

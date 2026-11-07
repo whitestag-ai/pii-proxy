@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { detectPii, type DetectorKey } from "./pii-detector.js";
+import { detectPii, REGEX_ONLY_DETECTORS, type DetectorKey } from "./pii-detector.js";
 import { classifyEntities, ClassifierUnavailableError, type ClassifierConfig } from "./entity-classifier.js";
 import { ChunkClassifierCache, classifyEntitiesChunked } from "./classifier-chunk-cache.js";
 import { EncryptedChunkCacheStore } from "./chunk-cache-store.js";
@@ -56,6 +56,74 @@ export interface PiiProxy {
 
 const CONF_RANK: Record<Confidence, number> = { low: 0, medium: 1, high: 2 };
 
+type Segment = { start: number; end: number };
+
+function segmentsOf(req: AnonymizeRequest): Segment[] {
+  return req.classifierSegments ?? [{ start: 0, end: req.text.length }];
+}
+
+/**
+ * Verbindet die Classifier-Bereiche zu einem Text. Ohne Werkzeug-Bloecke entspricht
+ * er dem bisherigen Gesamttext, sodass der Chunk-Cache gueltig bleibt. Die Treffer
+ * des Classifiers werden auf Positionen im Gesamttext zurueckgerechnet.
+ */
+function joinSegments(req: AnonymizeRequest): {
+  text: string;
+  toFullText: (findings: Finding[]) => Finding[];
+} {
+  const segments = segmentsOf(req);
+  const separator = req.classifierSeparator ?? "";
+  const text = segments.map((s) => req.text.slice(s.start, s.end)).join(separator);
+  const toFullText = (findings: Finding[]): Finding[] => {
+    const out: Finding[] = [];
+    for (const f of findings) {
+      let offset = 0;
+      for (const s of segments) {
+        const length = s.end - s.start;
+        if (f.start >= offset && f.end <= offset + length) {
+          const shift = s.start - offset;
+          out.push({ ...f, start: f.start + shift, end: f.end + shift });
+          break;
+        }
+        offset += length + separator.length;
+      }
+    }
+    return out;
+  };
+  return { text, toFullText };
+}
+
+/**
+ * Ueberlappende Treffer wuerden beim Ersetzen nach Position den Text zerstoeren.
+ * Die Liste beginnt mit den Regex-Treffern, die damit Vorrang behalten.
+ */
+function withoutOverlaps(findings: Finding[]): Finding[] {
+  const kept: Finding[] = [];
+  for (const f of findings) {
+    if (!kept.some((k) => f.start < k.end && k.start < f.end)) kept.push(f);
+  }
+  return kept;
+}
+
+/** Alle Regeln in den Classifier-Bereichen, dazwischen nur die strengen Muster. */
+function detectRegexFindings(req: AnonymizeRequest, ruleDetectors: DetectorKey[]): Finding[] {
+  const out: Finding[] = [];
+  const scan = (start: number, end: number, only: DetectorKey[]): void => {
+    if (end <= start) return;
+    for (const f of detectPii(req.text.slice(start, end), { only })) {
+      out.push({ ...f, start: f.start + start, end: f.end + start });
+    }
+  };
+  let pos = 0;
+  for (const s of segmentsOf(req)) {
+    scan(pos, s.start, REGEX_ONLY_DETECTORS);
+    scan(s.start, s.end, ruleDetectors);
+    pos = s.end;
+  }
+  scan(pos, req.text.length, REGEX_ONLY_DETECTORS);
+  return out;
+}
+
 export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
   const rules = opts.rules ?? loadDefaultRules();
   const store = new MappingStore({ path: opts.mappingDbPath, key: opts.mappingKey });
@@ -87,12 +155,16 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
         // Ergebnis je Chunk-Hash gecacht. Findings werden gemerged + nach
         // (type, value) dedupliziert. Ein ClassifierUnavailableError aus einem
         // beliebigen Chunk propagiert hier hoch -> fail-closed bleibt erhalten.
-        llmFindings = await classifyEntitiesChunked(
-          req.text,
-          (chunk, signal) => classifyEntities(chunk, opts.classifier, signal),
-          chunkCache,
-          req.signal,
-        );
+        const segmented = joinSegments(req);
+        if (segmented.text.length > 0) {
+          const found = await classifyEntitiesChunked(
+            segmented.text,
+            (chunk, signal) => classifyEntities(chunk, opts.classifier, signal),
+            chunkCache,
+            req.signal,
+          );
+          llmFindings = segmented.toFullText(found);
+        }
       } catch (err) {
         if (err instanceof ClassifierUnavailableError) {
           const blocked: AnonymizeBlocked = { blocked: true, reason: "classifier_unavailable" };
@@ -120,7 +192,7 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
         }
       }
 
-      const piiFindings = detectPii(req.text, { only: rules.detect.pii as DetectorKey[] });
+      const piiFindings = detectRegexFindings(req, rules.detect.pii as DetectorKey[]);
       const all = [...piiFindings, ...llmFindings];
 
       // Regex-Treffer werden immer anonymisiert (deterministisch, definitorisch sensibel).
@@ -130,7 +202,7 @@ export function createPiiProxy(opts: PiiProxyOptions): PiiProxy {
         (f) => f.source === "regex" || CONF_RANK[f.confidence] >= anonRank,
       );
 
-      const { text: anonText, mappings } = anonymizeText(req.text, filtered);
+      const { text: anonText, mappings } = anonymizeText(req.text, withoutOverlaps(filtered));
       const mappingId = randomUUID();
       store.write(mappingId, tenantId, mappings, rules.mapping.ttlSeconds);
 

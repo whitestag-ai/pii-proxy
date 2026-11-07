@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectPhonesDe } from "../../src/detectors/phone-de.js";
+import { detectPhonesDe, detectPhonesDeStrict } from "../../src/detectors/phone-de.js";
 
 describe("detectPhonesDe", () => {
   it("findet +49-Format", () => {
@@ -22,5 +22,29 @@ describe("detectPhonesDe", () => {
 
   it("ignoriert reine Zahlen ohne Telefon-Form", () => {
     expect(detectPhonesDe("Bestellnummer 12345")).toEqual([]);
+  });
+});
+
+describe("detectPhonesDeStrict", () => {
+  const werte = (t: string) => detectPhonesDeStrict(t).map((f) => f.value);
+
+  it("findet Nummern mit klaren Grenzen", () => {
+    expect(werte("Tel. +49 171 1234567.")).toEqual(["+49 171 1234567"]);
+    expect(werte("Fon: 030/1234567")).toEqual(["030/1234567"]);
+    expect(werte("(0171-1234567)")).toEqual(["0171-1234567"]);
+  });
+
+  it("trifft nichts mitten in IDs, UUIDs, Datumspfaden und Dezimalzahlen", () => {
+    for (const t of [
+      "3fa85f64-0717-4562-b3fc-2c963f66afa6",
+      "a01234567b",
+      "commit 9012345678",
+      "/runs/2026/0110/1234567-0",
+      "12.0123456",
+      "2026-01-07 09:15:02",
+      "v0123456-beta",
+    ]) {
+      expect(werte(t), t).toEqual([]);
+    }
   });
 });

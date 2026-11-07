@@ -11,6 +11,7 @@ detect:
     - url
     - kreditkarte
     - api_key
+    - secret
   llm:
     - person
     - firma

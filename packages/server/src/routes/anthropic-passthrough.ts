@@ -38,12 +38,14 @@ export interface AnthropicPassthroughOptions {
   tenantId?: string;
 }
 
-type TextRef = { get: () => string; set: (value: string) => void };
+// `regexOnly`: Werkzeug-Text laeuft nur durch die festen Muster. Der Classifier
+// braucht fuer 8 KB rund 100 s und macht Agenten damit unbenutzbar.
+type TextRef = { get: () => string; set: (value: string) => void; regexOnly?: boolean };
 
 function collectRequestTextRefs(body: z.infer<typeof RequestBody>): TextRef[] {
   const refs: TextRef[] = [];
 
-  const pushContent = (owner: { content: unknown }) => {
+  const pushContent = (owner: { content: unknown }, regexOnly = false) => {
     const c = owner.content;
     if (typeof c === "string") {
       refs.push({
@@ -51,16 +53,17 @@ function collectRequestTextRefs(body: z.infer<typeof RequestBody>): TextRef[] {
         set: (v) => {
           owner.content = v;
         },
+        regexOnly,
       });
     } else if (Array.isArray(c)) {
       for (const block of c) {
         if (isTextBlock(block)) {
           const tb = block as { text: string };
-          refs.push({ get: () => tb.text, set: (v) => { tb.text = v; } });
+          refs.push({ get: () => tb.text, set: (v) => { tb.text = v; }, regexOnly });
         } else if (isBlockOfType(block, "tool_result")) {
-          pushContent(block as { content: unknown });
+          pushContent(block as { content: unknown }, true);
         } else if (isBlockOfType(block, "tool_use")) {
-          pushStringLeaves(block as { input?: unknown }, "input", refs);
+          pushStringLeaves(block as { input?: unknown }, "input", refs, true);
         }
       }
     }
@@ -109,17 +112,22 @@ function collectResponseTextRefs(resp: { content?: unknown }): TextRef[] {
  * und Nicht-Strings bleiben unberuehrt, damit die Struktur einer Werkzeug-Eingabe
  * erhalten bleibt.
  */
-function pushStringLeaves(owner: object, key: string | number, refs: TextRef[]): void {
+function pushStringLeaves(
+  owner: object,
+  key: string | number,
+  refs: TextRef[],
+  regexOnly = false,
+): void {
   const slot = owner as Record<string | number, unknown>;
   const value = slot[key];
   if (typeof value === "string") {
     if (value.length > 0) {
-      refs.push({ get: () => slot[key] as string, set: (v) => { slot[key] = v; } });
+      refs.push({ get: () => slot[key] as string, set: (v) => { slot[key] = v; }, regexOnly });
     }
   } else if (Array.isArray(value)) {
-    value.forEach((_, i) => pushStringLeaves(value, i, refs));
+    value.forEach((_, i) => pushStringLeaves(value, i, refs, regexOnly));
   } else if (value && typeof value === "object") {
-    for (const k of Object.keys(value)) pushStringLeaves(value, k, refs);
+    for (const k of Object.keys(value)) pushStringLeaves(value, k, refs, regexOnly);
   }
 }
 
@@ -282,8 +290,18 @@ export function registerAnthropicPassthroughRoute(
       const boundary = ensureBoundaryAbsent(FIXED_BOUNDARY, originals);
       const joined = originals.join(boundary);
 
+      const classifierSegments: Array<{ start: number; end: number }> = [];
+      let position = 0;
+      refs.forEach((ref, i) => {
+        const end = position + originals[i].length;
+        if (!ref.regexOnly) classifierSegments.push({ start: position, end });
+        position = end + boundary.length;
+      });
+
       const anon = await opts.piiProxy.anonymize({
         text: joined,
+        classifierSegments,
+        classifierSeparator: boundary,
         targetLlm: body.model,
         agent: "anthropic-passthrough",
         tenantId: opts.tenantId,

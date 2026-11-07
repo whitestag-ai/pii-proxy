@@ -1,6 +1,6 @@
 import type { Finding } from "./types.js";
 import { detectEmails } from "./detectors/email.js";
-import { detectPhonesDe } from "./detectors/phone-de.js";
+import { detectPhonesDe, detectPhonesDeStrict } from "./detectors/phone-de.js";
 import { detectIbans } from "./detectors/iban.js";
 import { detectBics } from "./detectors/bic.js";
 import { detectUstIds } from "./detectors/ust-id.js";
@@ -9,6 +9,7 @@ import { detectPlzDe } from "./detectors/plz-de.js";
 import { detectUrls } from "./detectors/url.js";
 import { detectCreditCards } from "./detectors/creditcard.js";
 import { detectApiKeys } from "./detectors/apikey.js";
+import { detectSecrets } from "./detectors/secret.js";
 
 export type DetectorKey =
   | "email"
@@ -20,7 +21,9 @@ export type DetectorKey =
   | "plz_de"
   | "url"
   | "kreditkarte"
-  | "api_key";
+  | "api_key"
+  | "phone_de_strict"
+  | "secret";
 
 const DETECTORS: Record<DetectorKey, (t: string) => Finding[]> = {
   email: detectEmails,
@@ -33,14 +36,31 @@ const DETECTORS: Record<DetectorKey, (t: string) => Finding[]> = {
   url: detectUrls,
   kreditkarte: detectCreditCards,
   api_key: detectApiKeys,
+  phone_de_strict: detectPhonesDeStrict,
+  secret: detectSecrets,
 };
+
+/**
+ * Muster fuer Text, der nicht durch den Classifier laeuft (Werkzeug-Ausgaben).
+ * Nur Formen mit wenigen Fehltreffern: Das Modell muss diesen Text lesen koennen,
+ * und PLZ-, URL- oder Kreditkarten-Muster treffen dort vor allem IDs und Zahlen.
+ */
+export const REGEX_ONLY_DETECTORS: DetectorKey[] = [
+  "email",
+  "phone_de_strict",
+  "iban",
+  "api_key",
+  "secret",
+];
 
 export interface PiiDetectOptions {
   only?: DetectorKey[];
 }
 
 export function detectPii(text: string, opts: PiiDetectOptions = {}): Finding[] {
-  const keys = opts.only ?? (Object.keys(DETECTORS) as DetectorKey[]);
+  const keys =
+    opts.only ??
+    (Object.keys(DETECTORS) as DetectorKey[]).filter((k) => k !== "phone_de_strict");
   const all: Finding[] = [];
   for (const k of keys) {
     all.push(...DETECTORS[k](text));

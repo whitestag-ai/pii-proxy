@@ -740,6 +740,31 @@ describe("POST /anthropic/v1/messages — Werkzeug-Bloecke", () => {
     expect(sent.messages[0].content[0].name).toBe("send");
   });
 
+  it("gibt dem Classifier nur Text, Werkzeug-Bloecke laufen nur durch die festen Muster", async () => {
+    const { piiProxy } = await post(
+      {
+        model: "m",
+        max_tokens: 10,
+        system: "Sys",
+        messages: [
+          { role: "user", content: "Frage" },
+          { role: "assistant", content: [{ type: "tool_use", id: "t", name: "x", input: { a: "Eingabe" } }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "Ausgabe" }] },
+          { role: "assistant", content: [{ type: "text", text: "Antwort" }] },
+        ],
+      },
+      ok([{ type: "text", text: "ok" }]),
+    );
+
+    const req = (piiProxy.anonymize as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const sep = req.classifierSeparator as string;
+    const klassifiert = (req.classifierSegments as Array<{ start: number; end: number }>).map((s) =>
+      (req.text as string).slice(s.start, s.end),
+    );
+    expect(klassifiert).toEqual(["Sys", "Frage", "Antwort"]);
+    expect((req.text as string).split(sep)).toEqual(["Sys", "Frage", "Eingabe", "Ausgabe", "Antwort"]);
+  });
+
   it("laesst signierte thinking-Bloecke unangetastet", async () => {
     const thinking = { type: "thinking", thinking: "Max Mustermann", signature: "sig" };
     const { fetchFn } = await post(
