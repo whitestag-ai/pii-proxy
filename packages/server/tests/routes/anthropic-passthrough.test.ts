@@ -650,3 +650,127 @@ describe("POST /anthropic/v1/messages — role: system im messages-Array", () =>
     expect(fetchFn).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /anthropic/v1/messages — Werkzeug-Bloecke", () => {
+  let app: FastifyInstance;
+  afterEach(async () => app && (await app.close()));
+
+  async function post(payload: object, upstream: Response) {
+    const fetchFn = vi.fn().mockResolvedValue(upstream);
+    const piiProxy = mkPiiProxy();
+    app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy, fetchFn });
+    await app.ready();
+    const res = await app.inject({
+      method: "POST",
+      url: "/anthropic/v1/messages",
+      headers: { "x-api-key": "sk-ant-xxx", "content-type": "application/json" },
+      payload,
+    });
+    return { res, fetchFn, piiProxy };
+  }
+
+  const ok = (content: unknown[]) =>
+    new Response(JSON.stringify({ id: "m", type: "message", role: "assistant", content }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("anonymisiert tool_result als String und als Blockliste, Bildbloecke bleiben", async () => {
+    const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } };
+    const { fetchFn } = await post(
+      {
+        model: "m",
+        max_tokens: 10,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "tool_result", tool_use_id: "a", content: "Mail von Max Mustermann" },
+              {
+                type: "tool_result",
+                tool_use_id: "b",
+                is_error: true,
+                content: [{ type: "text", text: "An max@example.de" }, image],
+              },
+            ],
+          },
+        ],
+      },
+      ok([{ type: "text", text: "ok" }]),
+    );
+
+    const sent = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    const [a, b] = sent.messages[0].content;
+    expect(a.content).toBe("Mail von [PERSON_A]");
+    expect(b.content[0].text).toBe("An [EMAIL_A]");
+    expect(b.content[1]).toEqual(image);
+    expect(b.is_error).toBe(true);
+    expect(JSON.stringify(sent)).not.toContain("Max Mustermann");
+  });
+
+  it("anonymisiert fruehere tool_use-Eingaben auf jeder Tiefe, Schluessel und Zahlen bleiben", async () => {
+    const { fetchFn } = await post(
+      {
+        model: "m",
+        max_tokens: 10,
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                id: "t1",
+                name: "send",
+                input: { to: ["max@example.de"], meta: { name: "Max Mustermann", retries: 3 } },
+              },
+            ],
+          },
+        ],
+      },
+      ok([{ type: "text", text: "ok" }]),
+    );
+
+    const sent = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    expect(sent.messages[0].content[0].input).toEqual({
+      to: ["[EMAIL_A]"],
+      meta: { name: "[PERSON_A]", retries: 3 },
+    });
+    expect(sent.messages[0].content[0].name).toBe("send");
+  });
+
+  it("laesst signierte thinking-Bloecke unangetastet", async () => {
+    const thinking = { type: "thinking", thinking: "Max Mustermann", signature: "sig" };
+    const { fetchFn } = await post(
+      {
+        model: "m",
+        max_tokens: 10,
+        messages: [{ role: "assistant", content: [thinking, { type: "text", text: "x" }] }],
+      },
+      ok([{ type: "text", text: "ok" }]),
+    );
+
+    const sent = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    expect(sent.messages[0].content[0]).toEqual(thinking);
+  });
+
+  it("uebersetzt tool_use-Eingaben der Antwort zurueck (ohne Stream)", async () => {
+    const { res } = await post(
+      { model: "m", max_tokens: 10, messages: [{ role: "user", content: "Hallo" }] },
+      ok([
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "send",
+          input: { to: ["[EMAIL_A]"], meta: { name: "[PERSON_A]", retries: 3 } },
+        },
+      ]),
+    );
+
+    expect(res.json().content[0].input).toEqual({
+      to: ["max@example.de"],
+      meta: { name: "Max Mustermann", retries: 3 },
+    });
+  });
+});

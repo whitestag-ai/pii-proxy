@@ -57,6 +57,10 @@ function collectRequestTextRefs(body: z.infer<typeof RequestBody>): TextRef[] {
         if (isTextBlock(block)) {
           const tb = block as { text: string };
           refs.push({ get: () => tb.text, set: (v) => { tb.text = v; } });
+        } else if (isBlockOfType(block, "tool_result")) {
+          pushContent(block as { content: unknown });
+        } else if (isBlockOfType(block, "tool_use")) {
+          pushStringLeaves(block as { input?: unknown }, "input", refs);
         }
       }
     }
@@ -92,10 +96,31 @@ function collectResponseTextRefs(resp: { content?: unknown }): TextRef[] {
       if (isTextBlock(block)) {
         const tb = block as { text: string };
         refs.push({ get: () => tb.text, set: (v) => { tb.text = v; } });
+      } else if (isBlockOfType(block, "tool_use")) {
+        pushStringLeaves(block as { input?: unknown }, "input", refs);
       }
     }
   }
   return refs;
+}
+
+/**
+ * Sammelt alle String-Werte unter `owner[key]` auf jeder Tiefe. Objektschluessel
+ * und Nicht-Strings bleiben unberuehrt, damit die Struktur einer Werkzeug-Eingabe
+ * erhalten bleibt.
+ */
+function pushStringLeaves(owner: object, key: string | number, refs: TextRef[]): void {
+  const slot = owner as Record<string | number, unknown>;
+  const value = slot[key];
+  if (typeof value === "string") {
+    if (value.length > 0) {
+      refs.push({ get: () => slot[key] as string, set: (v) => { slot[key] = v; } });
+    }
+  } else if (Array.isArray(value)) {
+    value.forEach((_, i) => pushStringLeaves(value, i, refs));
+  } else if (value && typeof value === "object") {
+    for (const k of Object.keys(value)) pushStringLeaves(value, k, refs);
+  }
 }
 
 /**
@@ -121,6 +146,10 @@ const CLAUDE_CLIENT_PREAMBLES: RegExp[] = [
 
 function isClaudeClientPreamble(text: string): boolean {
   return CLAUDE_CLIENT_PREAMBLES.some((re) => re.test(text.trim()));
+}
+
+function isBlockOfType(block: unknown, type: string): boolean {
+  return !!block && typeof block === "object" && (block as { type?: unknown }).type === type;
 }
 
 function isTextBlock(block: unknown): boolean {

@@ -152,23 +152,20 @@ describe("createAnthropicSseDeanonymizer — streaming rewrite pipeline", () => 
     expect(extractFullBlockText(emitted, 0)).toBe("Max");
   });
 
-  it("forwards non-text deltas (tool_use input_json_delta) unchanged", () => {
+  it("forwards other deltas (thinking_delta) unchanged", () => {
     const { pipeline, emitted } = collectPipeline(mk([["[PERSON_A]", "Max"]]));
     pipeline.write(
       "event: content_block_delta\ndata: " +
         JSON.stringify({
           index: 2,
-          delta: { type: "input_json_delta", partial_json: "{\"foo\":\"[PERSON_A]\"}" },
+          delta: { type: "thinking_delta", thinking: "[PERSON_A]" },
         }) +
         "\n\n",
     );
     pipeline.end();
-    // Passed through unchanged (tool-use anonymization is Phase 2).
     expect(emitted).toHaveLength(1);
-    expect(emitted[0].event).toBe("content_block_delta");
     const payload = JSON.parse(emitted[0].data);
-    expect(payload.delta.type).toBe("input_json_delta");
-    expect(payload.delta.partial_json).toBe('{"foo":"[PERSON_A]"}');
+    expect(payload.delta).toEqual({ type: "thinking_delta", thinking: "[PERSON_A]" });
   });
 
   it("accepts input split across arbitrarily many write() calls", () => {
@@ -251,5 +248,54 @@ describe("createAnthropicSseDeanonymizer — streaming rewrite pipeline", () => 
     // Full frame ordering preserved for non-delta events:
     expect(emitted.filter((e) => e.event !== "content_block_delta").map((e) => e.event))
       .toEqual(["message_start", "content_block_start", "content_block_stop", "message_delta", "message_stop"]);
+  });
+});
+
+describe("createAnthropicSseDeanonymizer — input_json_delta", () => {
+  function lauf(mapping: Record<string, string>, parts: string[]) {
+    const events: Array<{ event: string; data: Record<string, unknown> }> = [];
+    const p = createAnthropicSseDeanonymizer({
+      mappingTable: new Map(Object.entries(mapping)),
+      writeEvent: (event, data) => events.push({ event, data: JSON.parse(data) }),
+    });
+    for (const part of parts) {
+      p.write(
+        `event: content_block_delta\ndata: ${JSON.stringify({
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "input_json_delta", partial_json: part },
+        })}\n\n`,
+      );
+    }
+    p.write(`event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 1 })}\n\n`);
+    p.end();
+    const deltas = events.filter((e) => e.event === "content_block_delta");
+    for (const d of deltas) {
+      expect((d.data.delta as { type: string }).type).toBe("input_json_delta");
+    }
+    return JSON.parse(
+      deltas.map((d) => (d.data.delta as { partial_json: string }).partial_json).join(""),
+    );
+  }
+
+  it("setzt ein ueber Deltas zerteiltes Pseudonym zurueck", () => {
+    expect(lauf({ "[EMAIL_A]": "max@example.de" }, ['{"to":"[EM', 'AIL_A]"}'])).toEqual({
+      to: "max@example.de",
+    });
+  });
+
+  it("maskiert Klarwerte fuer JSON", () => {
+    const klar = 'Zeile "eins"\nC:\\Pfad';
+    expect(lauf({ "[FIRMA_A]": klar }, ['{"a":"[FIRMA_A]"}'])).toEqual({ a: klar });
+  });
+
+  it("laesst JSON-Arrays intakt und uebersetzt Pseudonyme darin", () => {
+    expect(
+      lauf({ "[EMAIL_A]": "max@example.de" }, ['{"to":["x","[EMAIL_A]"],', '"n":[1,2]}']),
+    ).toEqual({ to: ["x", "max@example.de"], n: [1, 2] });
+  });
+
+  it("gibt einen zurueckgehaltenen Rest beim Blockende als input_json_delta aus", () => {
+    expect(lauf({}, ['{"a":"[noch offen"}'])).toEqual({ a: "[noch offen" });
   });
 });
