@@ -588,3 +588,65 @@ describe("POST /anthropic/v1/messages — Claude-Client-Identitaet", () => {
     expect(sent.messages[0].content).toBe("Hallo [PERSON_A]");
   });
 });
+
+describe("POST /anthropic/v1/messages — role: system im messages-Array", () => {
+  let app: FastifyInstance;
+  afterEach(async () => app && (await app.close()));
+
+  const upstreamOk = () =>
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "msg_1",
+          type: "message",
+          role: "assistant",
+          content: [{ type: "text", text: "ok" }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+  async function post(payload: unknown, fetchFn: ReturnType<typeof upstreamOk>) {
+    app = Fastify();
+    registerAuth(app, { sharedKey: KEY });
+    registerAnthropicPassthroughRoute(app, { piiProxy: mkPiiProxy(), fetchFn });
+    await app.ready();
+    return app.inject({
+      method: "POST",
+      url: "/anthropic/v1/messages",
+      headers: { "x-api-key": "sk-ant-xxx", "content-type": "application/json" },
+      payload: payload as object,
+    });
+  }
+
+  it("reicht die Nachricht weiter und anonymisiert ihren Text", async () => {
+    const fetchFn = upstreamOk();
+    const res = await post(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 10,
+        messages: [
+          { role: "user", content: [{ type: "text", text: "Hallo" }] },
+          { role: "system", content: [{ type: "text", text: "Kontext zu Max Mustermann" }] },
+        ],
+      },
+      fetchFn,
+    );
+
+    expect(res.statusCode).toBe(200);
+    const sent = JSON.parse(fetchFn.mock.calls[0][1].body as string);
+    expect(sent.messages[1].role).toBe("system");
+    expect(sent.messages[1].content[0].text).toBe("Kontext zu [PERSON_A]");
+  });
+
+  it("lehnt unbekannte Rollen weiterhin ab", async () => {
+    const fetchFn = upstreamOk();
+    const res = await post(
+      { model: "claude-sonnet-4-6", max_tokens: 10, messages: [{ role: "tool", content: "x" }] },
+      fetchFn,
+    );
+
+    expect(res.statusCode).toBe(400);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+});

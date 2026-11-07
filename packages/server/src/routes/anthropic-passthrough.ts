@@ -12,9 +12,12 @@ const OtherBlock = z.object({ type: z.string() }).passthrough();
 const ContentBlock = z.union([TextBlock, OtherBlock]);
 const Content = z.union([z.string(), z.array(ContentBlock)]);
 
+// `system` im messages-Array: Claude Code legt dort den Text von SessionStart-
+// Hooks ab (beim Start und nach jeder Kompaktierung). Der Inhalt laeuft wie jede
+// andere Nachricht durch die Anonymisierung.
 const Message = z
   .object({
-    role: z.enum(["user", "assistant"]),
+    role: z.enum(["user", "assistant", "system"]),
     content: Content,
   })
   .passthrough();
